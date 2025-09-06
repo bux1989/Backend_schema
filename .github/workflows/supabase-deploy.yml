@@ -1,133 +1,28 @@
-name: Supabase Migration CI
-
-concurrency:
-  group: supabase-migrations-${{ github.ref }}
-  cancel-in-progress: true
-
+name: Force Supabase Migration
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/config.toml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/config.toml'
   workflow_dispatch:
-
-jobs:
-  # Optional: basic PR validation without touching the DB
-  validate-migrations:
-    if: github.event_name == 'pull_request'
+jobs
+:
+  deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Validate migration files (basic)
-        run: |
-          set -euo pipefail
-          files=$(find supabase/migrations -name "*.sql" -type f || true)
-          if [ -z "$files" ]; then
-            echo "❌ No migration files found"
-            exit 1
-          fi
-          echo "$files" | sed 's/^/ - /'
-          echo "✅ Migration validation completed"
-
-  migrate:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-      # Quiet the CLI
-      DEBUG: ""
-      SUPABASE_DB_DEBUG: "0"
-      SUPABASE_LOG_LEVEL: "warn"
-      # Fail fast on locks; don’t hang forever
-      PGOPTIONS: -c lock_timeout=5s -c statement_timeout=20min -c idle_in_transaction_session_timeout=1min
+      SUPABASE_ACCESS_TOKEN: 
+${{ secrets.SUPABASE_ACCESS_TOKEN }
+}
+      SUPABASE_DB_PASSWORD: 
+${{ secrets.SUPABASE_DB_PASSWORD }
+}
+      SUPABASE_PROJECT_ID: 
+${{ secrets.SUPABASE_PROJECT_ID }
+}
     steps:
       - uses: actions/checkout@v4
-
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - name: Link project
+        run: supabase link --project-ref 
+$SUPABASE_PROJECT_ID
 
-      - name: Verify required secrets
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "❌ SUPABASE_ACCESS_TOKEN is not set"; exit 1; fi
-          if [ -z "${SUPABASE_PROJECT_ID:-}" ]; then
-            echo "❌ SUPABASE_PROJECT_ID is not set"; exit 1; fi
-          echo "✅ Secrets present"
-
-      - name: Link to Supabase project (idempotent)
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-
-      - name: Apply migrations (quiet + artifact)
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::group::supabase db push"
-          if ! supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push.log 2>&1; then
-            echo "❌ Migration failed. Last 200 lines:"
-            tail -n 200 push.log || true
-            echo "::endgroup::"
-            exit 1
-          fi
-          echo "✅ Migrations applied successfully."
-          echo "::endgroup::"
-
-      - name: Verify migration status
-        run: supabase migration list --project-ref "$SUPABASE_PROJECT_ID"
-
-      # If a lock timeout or other failure happened, print blockers
-      - name: Diagnose blocking (if previous step failed)
-        if: failure()
-        shell: bash
-        run: |
-          echo "::group::Blocking diagnostics"
-          cat > /tmp/locks.sql <<'SQL'
-          SELECT now() AS now, pid, wait_event_type, wait_event, state,
-                 age(clock_timestamp(), query_start) AS running_for,
-                 usename, application_name,
-                 regexp_replace(query, '\s+', ' ', 'g') AS query
-          FROM pg_stat_activity
-          WHERE state <> 'idle'
-          ORDER BY query_start;
-
-          WITH blocked AS (
-            SELECT blocked_locks.pid AS blocked_pid, blocked_activity.query AS blocked_query,
-                   blocking_locks.pid AS blocking_pid, blocking_activity.query AS blocking_query,
-                   blocked_activity.query_start AS blocked_since
-            FROM pg_locks blocked_locks
-            JOIN pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
-            JOIN pg_locks blocking_locks ON blocking_locks.locktype = blocked_locks.locktype
-                 AND blocking_locks.DATABASE IS NOT DISTINCT FROM blocked_locks.DATABASE
-                 AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
-                 AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
-                 AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
-                 AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
-                 AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
-                 AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
-                 AND blocking_locks.pid <> blocked_locks.pid
-            JOIN pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
-            WHERE NOT blocked_locks.GRANTED
-          )
-          SELECT * FROM blocked;
-          SQL
-          supabase db execute --project-ref "$SUPABASE_PROJECT_ID" --file /tmp/locks.sql || true
-          echo "::endgroup::"
-
-      - name: Upload full logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-push-logs
-          path: push.log
+      - name: Force push migrations
+        run: supabase db push
