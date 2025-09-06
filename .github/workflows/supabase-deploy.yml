@@ -15,11 +15,17 @@ on:
     paths:
       - 'supabase/migrations/**'
   workflow_dispatch:
+    inputs:
+      forceReapplyLatest:
+        description: "Force revert and re-apply the latest local migration on remote (use if remote was stamped)"
+        required: false
+        default: "false"
 
 jobs:
   # Safe validation job for PRs that doesn't touch secrets or database
   validate-migrations:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
@@ -59,7 +65,7 @@ jobs:
   # Migration job that only runs on push to main or manual dispatch
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # Add overall job timeout
+    timeout-minutes: 20  # Ensure overall job timeout is >= 10 minutes
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -105,7 +111,30 @@ jobs:
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Repair migration conflicts
+      - name: Install PostgreSQL client (psql)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Show remote migration records
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "🧾 supabase_migrations.schema_migrations content:"
+          psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -c \
+            "select version, name, coalesce(array_length(statements,1),0) as stmt_count from supabase_migrations.schema_migrations order by version;"
+
+      - name: Optionally force revert latest migration on remote
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.forceReapplyLatest == 'true' }}
+        run: |
+          set -euo pipefail
+          latest_local=$(ls -1 supabase/migrations/*.sql | sort | tail -n1 | xargs -n1 basename | cut -d '_' -f1)
+          echo "🔁 Forcing revert of remote version: $latest_local"
+          supabase migration repair --status reverted "$latest_local" --debug
+          echo "📋 Status after revert:"
+          supabase migration list --debug
+
+      - name: Repair migration conflicts (remote-only)
         timeout-minutes: 5
         run: |
           echo "🔧 Checking for migration conflicts..."
@@ -116,7 +145,7 @@ jobs:
           if [ -n "$remote_only_migrations" ]; then
             echo "Found remote-only migrations, attempting repair..."
             
-            # Extract migration versions (this gets the specific migration we saw: 20250906121030)
+            # Extract migration versions
             remote_versions=$(echo "$remote_only_migrations" | awk '{print $2}' | grep '^20[0-9]{12}$' || true)
             
             for version in $remote_versions; do
@@ -126,7 +155,7 @@ jobs:
               }
             done
           else
-            echo "✅ No migration conflicts detected"
+            echo "✅ No remote-only migration conflicts detected"
           fi
           
           # Show updated status
@@ -141,7 +170,12 @@ jobs:
 
       - name: Verify migration completion
         timeout-minutes: 2
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           echo "✅ Verifying migration completion..."
           supabase migration list --debug
+          echo "🧾 supabase_migrations.schema_migrations content (post-push):"
+          psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -c \
+            "select version, name, coalesce(array_length(statements,1),0) as stmt_count from supabase_migrations.schema_migrations order by version;"
           echo "Migration workflow completed successfully!"
