@@ -35,9 +35,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      # Optional: full Postgres URI to enable diagnostics with psql (copy from Dashboard)
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      # Keep logs quiet; fail fast on locks
+      # Quiet CLI; fail fast on locks
       DEBUG: ""
       SUPABASE_DB_DEBUG: "0"
       SUPABASE_LOG_LEVEL: "warn"
@@ -62,34 +60,57 @@ jobs:
       - name: Link to Supabase project (non-interactive)
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Stage all migrations for phase filtering
+      - name: Stage all .sql files recursively
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/all supabase/migrations
-          shopt -s nullglob
-          cp supabase/migrations/*.sql /tmp/all/ || true
-          echo "Staged files:"
+          shopt -s globstar nullglob
+          mkdir -p /tmp/all
+          mapfile -t SQLS < <(printf "%s\n" supabase/migrations/**/*.sql)
+          if [ ${#SQLS[@]} -eq 0 ]; then
+            echo "❌ No .sql files found under supabase/migrations (including subfolders)."
+            echo "Expected e.g. supabase/migrations/2025xxxx-01_tables.sql or supabase/migrations/2025xxxx_name/migration.sql"
+            exit 1
+          fi
+          for f in "${SQLS[@]}"; do
+            # Preserve unique names in /tmp/all; include path hash to avoid collisions
+            base="$(basename "$f")"
+            hash="$(echo -n "$f" | sha1sum | cut -c1-8)"
+            cp "$f" "/tmp/all/${hash}__${base}"
+          done
+          echo "Staged ${#SQLS[@]} SQL files:"
           ls -1 /tmp/all || true
 
       - name: Set PHASE env
         run: echo "PHASE=${{ github.event_name == 'workflow_dispatch' && inputs.phase || 'all' }}" >> $GITHUB_ENV
 
-      # 01 Tables
-      - name: Apply 01_tables
+      - name: Apply phase 01 (tables)
         if: ${{ env.PHASE == 'all' || env.PHASE == 'tables' }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -f supabase/migrations/*.sql || true
+          mkdir -p /tmp/phase-01/supabase/migrations
+          cp supabase/config.toml /tmp/phase-01/supabase/config.toml
           shopt -s nullglob
-          files=(/tmp/all/*-01_*.sql)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "ℹ️ No 01_* files found; skipping"
+          # First try glob naming
+          mapfile -t match < <(ls /tmp/all/*-01_*.sql 2>/dev/null || true)
+          # Fallback: content-based detection (CREATE TABLE / PRIMARY KEY / CREATE TYPE / CREATE SCHEMA)
+          if [ ${#match[@]} -eq 0 ]; then
+            while IFS= read -r -d '' f; do
+              if grep -qiE '(^|[^A-Z])CREATE[[:space:]]+TABLE|PRIMARY[[:space:]]+KEY|CREATE[[:space:]]+TYPE|CREATE[[:space:]]+SCHEMA' "$f"; then
+                match+=("$f")
+              fi
+            done < <(find /tmp/all -type f -name "*.sql" -print0)
+            echo "ℹ️ Using content-based detection for phase 01."
+          fi
+          if [ ${#match[@]} -eq 0 ]; then
+            echo "ℹ️ Phase 01: no matching files. Skipping."
           else
-            cp "${files[@]}" supabase/migrations/
+            printf "Phase 01 files (%d):\n" "${#match[@]}"
+            printf " - %s\n" "${match[@]}"
+            cp "${match[@]}" /tmp/phase-01/supabase/migrations/
             echo "::group::supabase db push (01)"
-            if ! supabase db push > push-01.log 2>&1; then
+            if ! supabase db push --workdir /tmp/phase-01 > push-01.log 2>&1; then
               tail -n 200 push-01.log || true
               echo "::endgroup::"
               exit 1
@@ -97,21 +118,31 @@ jobs:
             echo "::endgroup::"
           fi
 
-      # 02 Foreign Keys
-      - name: Apply 02_foreign_keys
+      - name: Apply phase 02 (foreign keys)
         if: ${{ env.PHASE == 'all' || env.PHASE == 'foreign_keys' }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -f supabase/migrations/*.sql || true
+          mkdir -p /tmp/phase-02/supabase/migrations
+          cp supabase/config.toml /tmp/phase-02/supabase/config.toml
           shopt -s nullglob
-          files=(/tmp/all/*-02_*.sql)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "ℹ️ No 02_* files found; skipping"
+          mapfile -t match < <(ls /tmp/all/*-02_*.sql 2>/dev/null || true)
+          if [ ${#match[@]} -eq 0 ]; then
+            while IFS= read -r -d '' f; do
+              if grep -qiE 'ALTER[[:space:]]+TABLE.*FOREIGN[[:space:]]+KEY' "$f"; then
+                match+=("$f")
+              fi
+            done < <(find /tmp/all -type f -name "*.sql" -print0)
+            echo "ℹ️ Using content-based detection for phase 02."
+          fi
+          if [ ${#match[@]} -eq 0 ]; then
+            echo "ℹ️ Phase 02: no matching files. Skipping."
           else
-            cp "${files[@]}" supabase/migrations/
+            printf "Phase 02 files (%d):\n" "${#match[@]}"
+            printf " - %s\n" "${match[@]}"
+            cp "${match[@]}" /tmp/phase-02/supabase/migrations/
             echo "::group::supabase db push (02)"
-            if ! supabase db push > push-02.log 2>&1; then
+            if ! supabase db push --workdir /tmp/phase-02 > push-02.log 2>&1; then
               tail -n 200 push-02.log || true
               echo "::endgroup::"
               exit 1
@@ -119,21 +150,31 @@ jobs:
             echo "::endgroup::"
           fi
 
-      # 03 Indexes
-      - name: Apply 03_indexes
+      - name: Apply phase 03 (indexes)
         if: ${{ env.PHASE == 'all' || env.PHASE == 'indexes' }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -f supabase/migrations/*.sql || true
+          mkdir -p /tmp/phase-03/supabase/migrations
+          cp supabase/config.toml /tmp/phase-03/supabase/config.toml
           shopt -s nullglob
-          files=(/tmp/all/*-03_*.sql)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "ℹ️ No 03_* files found; skipping"
+          mapfile -t match < <(ls /tmp/all/*-03_*.sql 2>/dev/null || true)
+          if [ ${#match[@]} -eq 0 ]; then
+            while IFS= read -r -d '' f; do
+              if grep -qiE 'CREATE[[:space:]]+INDEX' "$f"; then
+                match+=("$f")
+              fi
+            done < <(find /tmp/all -type f -name "*.sql" -print0)
+            echo "ℹ️ Using content-based detection for phase 03."
+          fi
+          if [ ${#match[@]} -eq 0 ]; then
+            echo "ℹ️ Phase 03: no matching files. Skipping."
           else
-            cp "${files[@]}" supabase/migrations/
+            printf "Phase 03 files (%d):\n" "${#match[@]}"
+            printf " - %s\n" "${match[@]}"
+            cp "${match[@]}" /tmp/phase-03/supabase/migrations/
             echo "::group::supabase db push (03)"
-            if ! supabase db push > push-03.log 2>&1; then
+            if ! supabase db push --workdir /tmp/phase-03 > push-03.log 2>&1; then
               tail -n 200 push-03.log || true
               echo "::endgroup::"
               exit 1
@@ -141,21 +182,31 @@ jobs:
             echo "::endgroup::"
           fi
 
-      # 04 Views & Functions
-      - name: Apply 04_views_functions
+      - name: Apply phase 04 (views & functions)
         if: ${{ env.PHASE == 'all' || env.PHASE == 'views_functions' }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -f supabase/migrations/*.sql || true
+          mkdir -p /tmp/phase-04/supabase/migrations
+          cp supabase/config.toml /tmp/phase-04/supabase/config.toml
           shopt -s nullglob
-          files=(/tmp/all/*-04_*.sql)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "ℹ️ No 04_* files found; skipping"
+          mapfile -t match < <(ls /tmp/all/*-04_*.sql 2>/dev/null || true)
+          if [ ${#match[@]} -eq 0 ]; then
+            while IFS= read -r -d '' f; do
+              if grep -qiE 'CREATE[[:space:]]+(OR[[:space:]]+REPLACE[[:space:]]+)?VIEW|CREATE[[:space:]]+FUNCTION|CREATE[[:space:]]+PROCEDURE' "$f"; then
+                match+=("$f")
+              fi
+            done < <(find /tmp/all -type f -name "*.sql" -print0)
+            echo "ℹ️ Using content-based detection for phase 04."
+          fi
+          if [ ${#match[@]} -eq 0 ]; then
+            echo "ℹ️ Phase 04: no matching files. Skipping."
           else
-            cp "${files[@]}" supabase/migrations/
+            printf "Phase 04 files (%d):\n" "${#match[@]}"
+            printf " - %s\n" "${match[@]}"
+            cp "${match[@]}" /tmp/phase-04/supabase/migrations/
             echo "::group::supabase db push (04)"
-            if ! supabase db push > push-04.log 2>&1; then
+            if ! supabase db push --workdir /tmp/phase-04 > push-04.log 2>&1; then
               tail -n 200 push-04.log || true
               echo "::endgroup::"
               exit 1
@@ -163,21 +214,31 @@ jobs:
             echo "::endgroup::"
           fi
 
-      # 05 Triggers & Policies
-      - name: Apply 05_triggers_policies
+      - name: Apply phase 05 (triggers & policies)
         if: ${{ env.PHASE == 'all' || env.PHASE == 'triggers_policies' }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -f supabase/migrations/*.sql || true
+          mkdir -p /tmp/phase-05/supabase/migrations
+          cp supabase/config.toml /tmp/phase-05/supabase/config.toml
           shopt -s nullglob
-          files=(/tmp/all/*-05_*.sql)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "ℹ️ No 05_* files found; skipping"
+          mapfile -t match < <(ls /tmp/all/*-05_*.sql 2>/dev/null || true)
+          if [ ${#match[@]} -eq 0 ]; then
+            while IFS= read -r -d '' f; do
+              if grep -qiE 'CREATE[[:space:]]+TRIGGER|ENABLE[[:space:]]+ROW[[:space:]]+LEVEL[[:space:]]+SECURITY|CREATE[[:space:]]+POLICY|GRANT[[:space:]]' "$f"; then
+                match+=("$f")
+              fi
+            done < <(find /tmp/all -type f -name "*.sql" -print0)
+            echo "ℹ️ Using content-based detection for phase 05."
+          fi
+          if [ ${#match[@]} -eq 0 ]; then
+            echo "ℹ️ Phase 05: no matching files. Skipping."
           else
-            cp "${files[@]}" supabase/migrations/
+            printf "Phase 05 files (%d):\n" "${#match[@]}"
+            printf " - %s\n" "${match[@]}"
+            cp "${match[@]}" /tmp/phase-05/supabase/migrations/
             echo "::group::supabase db push (05)"
-            if ! supabase db push > push-05.log 2>&1; then
+            if ! supabase db push --workdir /tmp/phase-05 > push-05.log 2>&1; then
               tail -n 200 push-05.log || true
               echo "::endgroup::"
               exit 1
@@ -188,28 +249,6 @@ jobs:
       - name: Verify migration status
         if: ${{ success() && (env.PHASE == 'all') }}
         run: supabase migration list
-
-      # Optional blocking diagnostics using psql if SUPABASE_DB_URL is provided
-      - name: Diagnose blocking with psql
-        if: ${{ failure() && env.SUPABASE_DB_URL != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::group::Blocking diagnostics (psql)"
-          sudo apt-get update -y >/dev/null 2>&1 || true
-          sudo apt-get install -y postgresql-client >/dev/null 2>&1 || true
-          cat > /tmp/locks.sql <<'SQL'
-          SELECT now() AS now, pid, wait_event_type, wait_event, state,
-                 age(clock_timestamp(), query_start) AS running_for,
-                 usename, application_name,
-                 regexp_replace(query, '\s+', ' ', 'g') AS query
-          FROM pg_stat_activity
-          WHERE state <> 'idle'
-          ORDER BY query_start;
-          SQL
-          PGPASSWORD="$(echo "$SUPABASE_DB_URL" | sed -n 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/p')" \
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f /tmp/locks.sql || true
-          echo "::endgroup::"
 
       - name: Upload logs
         if: always()
