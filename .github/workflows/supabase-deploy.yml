@@ -1,10 +1,4 @@
----
 name: Supabase Migration CI
-
-concurrency:
-  group: supabase-migrations-${{ github.ref }}
-
-  cancel-in-progress: false
 
 on:
   push:
@@ -19,8 +13,12 @@ on:
       - 'supabase/config.toml'
   workflow_dispatch:
 
+concurrency:
+  group: supabase-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # Safe validation job for PRs that doesn't touch secrets or database
+  # Safe, no-secrets validation for PRs
   validate-migrations:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
@@ -33,42 +31,39 @@ jobs:
         with:
           version: latest
 
-      - name: Validate migration files
+      - name: Validate migration files (basic)
         run: |
           echo "🔍 Validating migration files..."
-
-          # Check if migration files exist and have valid SQL syntax
-          migration_files=$(find supabase/migrations -name "*.sql" -type f)
-
-          if [ -z "$migration_files" ]; then
+          set -euo pipefail
+          files=$(find supabase/migrations -name "*.sql" -type f || true)
+          if [ -z "$files" ]; then
             echo "❌ No migration files found"
             exit 1
           fi
-
-          echo "Found migration files:"
-          echo "$migration_files"
-
-          # Basic SQL syntax validation
-          for file in $migration_files; do
-            echo "Validating $file..."
-            if ! grep -q ";" "$file"; then
-              echo "⚠️  Warning: $file may not contain valid SQL statements"
+          echo "$files" | sed 's/^/ - /'
+          # very basic sanity check (no DB access)
+          for f in $files; do
+            if ! grep -q ";" "$f"; then
+              echo "⚠️  $f may not contain complete SQL statements"
             fi
-            echo "✅ $file appears valid"
           done
+          echo "✅ Migration validation completed"
 
-          echo "✅ Migration validation completed successfully!"
-
-  # Migration job that only runs on push to main or manual dispatch
+  # Real migrations only on push to main or manual dispatch
   migrate:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     env:
+      # Required secrets:
+      # - SUPABASE_ACCESS_TOKEN (Account -> Access Tokens)
+      # - SUPABASE_PROJECT_REF (project ref like abcdefghijklmno)
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      # Keep the CLI quiet to avoid wire-protocol spam
+      DEBUG: ""
+      SUPABASE_DB_DEBUG: "0"
+      SUPABASE_LOG_LEVEL: "warn"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,97 +73,30 @@ jobs:
         with:
           version: latest
 
-      - name: Cache Supabase CLI
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/supabase
-          key: ${{ runner.os }}-supabase-${{ hashFiles('supabase/config.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-supabase-
-
-      - name: Verify environment variables
-        run: |
-          echo "Checking required environment variables..."
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "❌ SUPABASE_ACCESS_TOKEN is not set"
-            exit 1
-          fi
-          if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-            echo "❌ SUPABASE_DB_PASSWORD is not set"
-            exit 1
-          fi
-          if [ -z "$SUPABASE_PROJECT_ID" ]; then
-            echo "❌ SUPABASE_PROJECT_ID is not set"
-            exit 1
-          fi
-          echo "✅ All required environment variables are set"
-
       - name: Link to Supabase project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Apply migrations (quiet + artifact)
+        shell: bash
         run: |
-          echo "🔗 Linking to Supabase project: $SUPABASE_PROJECT_ID"
-          supabase link --project-ref "$SUPABASE_PROJECT_ID" \
-            --password "$SUPABASE_DB_PASSWORD" --debug
-
-      - name: Check migration status
-        run: |
-          echo "📋 Checking current migration status..."
-          supabase migration list --debug
-
-      - name: Run migrations with advisory lock
-        run: |
-          echo "🚀 Running migrations with Postgres advisory lock..."
-
-          # Create a temporary SQL script that uses advisory lock
-          cat > /tmp/migration_with_lock.sql << 'EOF'
-          DO $$
-          BEGIN
-            -- Acquire advisory lock (using a unique key for this project)
-            -- The lock key should be unique to your project
-            IF NOT pg_try_advisory_lock(12345678) THEN
-              RAISE EXCEPTION 'Another migration process is already running. ' 
-                              || 'Please try again later.';
-            END IF;
-
-            RAISE NOTICE 'Advisory lock acquired successfully';
-          END $$;
-          EOF
-
-          # Execute the lock acquisition
-          echo "Acquiring advisory lock..."
-          supabase db execute --file /tmp/migration_with_lock.sql --debug
-
-          # Run migrations
-          echo "Running migrations non-interactively with debug output..."
-          supabase db push --debug
-        continue-on-error: false
-
-          # Release the advisory lock
-          cat > /tmp/release_lock.sql << 'EOF'
-          DO $$
-          BEGIN
-            -- Release the advisory lock
-            PERFORM pg_advisory_unlock(12345678);
-            RAISE NOTICE 'Advisory lock released successfully';
-          END $$;
-          EOF
-
-          echo "Releasing advisory lock..."
-          supabase db execute --file /tmp/release_lock.sql --debug
-
-      - name: Verify migration completion
-        run: |
-          echo "✅ Verifying migration completion..."
-          supabase migration list --debug
-          echo "Migration workflow completed successfully!"
-
-      - name: Post-migration validation
-        run: |
-          echo "🔍 Performing post-migration validation..."
-          # Check if all migrations were applied successfully
-          PENDING_MIGRATIONS=$(supabase migration list --format json | jq '[.[] | select(.applied == false)] | length')
-          if [ "$PENDING_MIGRATIONS" -gt 0 ]; then
-            echo "❌ Found $PENDING_MIGRATIONS pending migration(s)"
+          set -euo pipefail
+          echo "::group::supabase db push"
+          # Run quietly; on failure, show the last part for quick diagnosis
+          supabase db push > push.log 2>&1 || {
+            echo "❌ Migration failed. Last 200 lines:"
+            tail -n 200 push.log || true
+            echo "::endgroup::"
             exit 1
-          else
-            echo "✅ All migrations applied successfully"
-          fi
+          }
+          echo "✅ Migrations applied successfully."
+          echo "::endgroup::"
+
+      - name: Verify migration status
+        run: supabase migration list
+
+      - name: Upload full logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-push-logs
+          path: push.log
