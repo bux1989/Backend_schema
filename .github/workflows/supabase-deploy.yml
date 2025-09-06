@@ -1,4 +1,3 @@
----
 name: Supabase Migration CI
 
 # Concurrency group to ensure only one migration run executes at a time
@@ -36,7 +35,7 @@ jobs:
           echo "🔍 Validating migration files..."
 
           # Check if migration files exist and have valid SQL syntax
-          migration_files=$(find supabase/migrations -name "*.sql" -type f)
+          migration_files=$(find supabase/migrations -name "*.sql" -type f 2>/dev/null || true)
 
           if [ -z "$migration_files" ]; then
             echo "❌ No migration files found"
@@ -103,45 +102,11 @@ jobs:
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Run migrations with advisory lock
+      - name: Run migrations (simplified approach)
         run: |
-          echo "🚀 Running migrations with Postgres advisory lock..."
-
-          # Create a temporary SQL script that uses advisory lock
-          cat > /tmp/migration_with_lock.sql << 'EOF'
-          DO $$
-          BEGIN
-            -- Acquire advisory lock (using a unique key for this project)
-            -- The lock key should be unique to your project
-            IF NOT pg_try_advisory_lock(12345678) THEN
-              RAISE EXCEPTION 'Another migration process is already running. ' 
-                              || 'Please try again later.';
-            END IF;
-
-            RAISE NOTICE 'Advisory lock acquired successfully';
-          END $$;
-          EOF
-
-          # Execute the lock acquisition
-          echo "Acquiring advisory lock..."
-          supabase db execute --file /tmp/migration_with_lock.sql --debug
-
-          # Run migrations
-          echo "Running migrations non-interactively with debug output..."
+          echo "🚀 Running migrations..."
+          # Use db push which handles migrations properly
           supabase db push --debug
-
-          # Release the advisory lock
-          cat > /tmp/release_lock.sql << 'EOF'
-          DO $$
-          BEGIN
-            -- Release the advisory lock
-            PERFORM pg_advisory_unlock(12345678);
-            RAISE NOTICE 'Advisory lock released successfully';
-          END $$;
-          EOF
-
-          echo "Releasing advisory lock..."
-          supabase db execute --file /tmp/release_lock.sql --debug
 
       - name: Verify migration completion
         run: |
