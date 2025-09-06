@@ -2305,7 +2305,7 @@ DECLARE
   v_user_school_id uuid;
 BEGIN
   -- Get user's school with validation
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -2366,7 +2366,7 @@ DECLARE
   v_user_school_id uuid;
 BEGIN
   -- Get user's school with validation
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -2502,7 +2502,7 @@ BEGIN
     LEFT JOIN subjects s ON cl.subject_id = s.id
     LEFT JOIN structure_rooms r ON cl.room_id = r.id
     WHERE cl.id = p_lesson_id
-    AND cl.school_id = auth.get_user_school_id();
+    AND cl.school_id = public.get_user_school_id();
 
     IF NOT FOUND THEN
         RETURN json_build_object(
@@ -2520,7 +2520,7 @@ BEGIN
         WHERE staff_id = p_substitute_teacher_id
         AND date <= v_lesson_time::date
         AND COALESCE(end_date, date) >= v_lesson_time::date
-        AND school_id = auth.get_user_school_id()
+        AND school_id = public.get_user_school_id()
     ) THEN
         RETURN json_build_object(
             'success', false,
@@ -2534,7 +2534,7 @@ BEGIN
         WHERE p_substitute_teacher_id = ANY(cl2.teacher_ids)
         AND cl2.start_datetime = v_lesson_time
         AND cl2.is_cancelled = false
-        AND cl2.school_id = auth.get_user_school_id()
+        AND cl2.school_id = public.get_user_school_id()
     ) THEN
         v_warnings := array_append(v_warnings, 'schedule_conflict');
         v_priority_score := 50;
@@ -2548,7 +2548,7 @@ BEGIN
         WHERE p_substitute_teacher_id = ANY(cl3.teacher_ids)
         AND EXTRACT(DOW FROM cl3.start_datetime) = v_lesson_day
         AND cl3.is_cancelled = false
-        AND cl3.school_id = auth.get_user_school_id()
+        AND cl3.school_id = public.get_user_school_id()
     ) THEN
         v_warnings := array_append(v_warnings, 'not_scheduled_warning');
         v_priority_score := LEAST(v_priority_score, 30);
@@ -2585,7 +2585,7 @@ BEGIN
         v_priority_score,
         v_warnings,
         'enhanced_assignment',
-        auth.get_user_school_id()
+        public.get_user_school_id()
     ) RETURNING id INTO v_substitute_id;
 
     RETURN json_build_object(
@@ -2941,7 +2941,7 @@ v_filtered_ids uuid[] := '{}';
 v_id uuid;
 v_result json;
 BEGIN
-v_school_id := auth.get_user_school_id();
+v_school_id := public.get_user_school_id();
 IF v_school_id IS NULL THEN
 RETURN jsonb_build_object('success', false, 'error', 'No school context found');
 END IF;
@@ -3024,7 +3024,7 @@ DECLARE
   v_result jsonb;
   v_school_id uuid;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context');
@@ -4012,7 +4012,7 @@ v_school_id uuid; v_absence_id uuid; v_staff_id uuid;
 v_class_names text[]; v_staff_names text[];
 v_is_admin boolean; v_approved_by uuid; v_current_profile_id uuid;
 begin
-v_school_id := auth.get_user_school_id();
+v_school_id := public.get_user_school_id();
 v_current_profile_id := auth.uid();
 
 v_is_admin := exists (
@@ -4100,7 +4100,7 @@ DECLARE
   v_user_school_id uuid;
   v_class_id uuid;
 BEGIN
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
   END IF;
@@ -4164,7 +4164,7 @@ DECLARE
   v_class_id uuid;
   v_teacher_id uuid;
 BEGIN
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
   END IF;
@@ -4220,7 +4220,7 @@ DECLARE
     v_new_partner_id uuid;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
     
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, NULL::uuid, 'User not associated with a school'::text;
@@ -4286,7 +4286,7 @@ DECLARE
   v_success boolean := false;
 BEGIN
   -- Get user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   -- Validate school context exists
   IF v_school_id IS NULL THEN
@@ -4927,7 +4927,7 @@ DECLARE
     v_phone_contact_id uuid;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
 
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, NULL::uuid, 'User not associated with a school'::text;
@@ -5532,7 +5532,7 @@ DECLARE
   v_new_room_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -5634,7 +5634,7 @@ CREATE FUNCTION public.create_room_react_alt(p_name text, p_room_number text, p_
   v_new_room_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -5802,7 +5802,7 @@ CREATE FUNCTION public.create_schedule_draft_react(p_title text, p_semester_id u
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_school_id uuid := auth.get_user_school_id();
+  v_school_id uuid := public.get_user_school_id();
   v_user_id   uuid := (auth.jwt()->>'sub')::uuid;
   v_draft_id  uuid;
 BEGIN
@@ -5857,7 +5857,7 @@ DECLARE
   v_real_time_id text;
 BEGIN
   -- Get user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -6107,7 +6107,7 @@ DECLARE
   v_approved_by uuid;
   v_current_profile_id uuid;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   v_current_profile_id := auth.uid();
   
   -- ✅ Check if current user has Admin role
@@ -6308,7 +6308,7 @@ DECLARE
   v_role_id UUID;
 BEGIN
   -- Get current user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'Access denied: No school context';
   END IF;
@@ -6565,7 +6565,7 @@ DECLARE
   parent_item jsonb;
 BEGIN
   -- Get current user's school
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'Access denied: No school context';
   END IF;
@@ -6781,7 +6781,7 @@ DECLARE
   new_class_hours_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -6878,7 +6878,7 @@ DECLARE
   new_grade_hours_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -7044,7 +7044,7 @@ DECLARE
   v_student_count integer;
 BEGIN
   -- Get user's school with validation
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -7182,7 +7182,7 @@ DECLARE
     v_profile_name text;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
 
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, p_profile_id, 'User not associated with a school'::text;
@@ -7283,7 +7283,7 @@ DECLARE
   v_dependencies_count integer;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -7372,7 +7372,7 @@ BEGIN
   v_auth_user_id := (auth.jwt()->>'sub')::uuid;
   
   -- Get user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -7747,7 +7747,7 @@ DECLARE
   class_hours_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -7787,7 +7787,7 @@ DECLARE
   grade_hours_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -8521,7 +8521,7 @@ DECLARE
   v_absence_record record;
   v_conflict_record record;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -9010,7 +9010,7 @@ DECLARE
   v_extern jsonb;
 BEGIN
   -- Get school context (existing pattern)
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
 
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -9233,7 +9233,7 @@ DECLARE
   v_classes jsonb;
 BEGIN
   -- Get school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
 
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -9281,7 +9281,7 @@ DECLARE
   v_user_school_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -9381,7 +9381,7 @@ DECLARE
   v_school_id uuid;
   v_absences jsonb;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -9453,7 +9453,7 @@ DECLARE
     v_school_id uuid;
 BEGIN
     -- Get school ID (from parameter or current user)
-    v_school_id := COALESCE(p_school_id, auth.get_user_school_id());
+    v_school_id := COALESCE(p_school_id, public.get_user_school_id());
 
     IF v_school_id IS NULL THEN
         RAISE EXCEPTION 'School ID not found';
@@ -9661,7 +9661,7 @@ CREATE FUNCTION public.get_course_planner_data_react() RETURNS jsonb
     AS $$
 BEGIN
   -- Validate school access
-  IF auth.get_user_school_id() IS NULL THEN
+  IF public.get_user_school_id() IS NULL THEN
     RAISE EXCEPTION 'No school context found';
   END IF;
 
@@ -9691,7 +9691,7 @@ BEGIN
       FROM vw_react_schedule_structure row
     ),
     'metadata', jsonb_build_object(
-      'school_id', auth.get_user_school_id(),
+      'school_id', public.get_user_school_id(),
       'generated_at', now(),
       'user_id', auth.uid()
     )
@@ -9811,7 +9811,7 @@ DECLARE
   v_semester_end date;
 BEGIN
   -- Get user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'No school context found';
@@ -10087,7 +10087,7 @@ DECLARE
     v_profile_school_id uuid;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
 
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, NULL::uuid, NULL::text, NULL::text, NULL::date, NULL::text, 
@@ -10192,7 +10192,7 @@ BEGIN
         AND ca.start_date <= p_date
         AND COALESCE(ca.end_date, ca.start_date) >= p_date
         AND cl.is_cancelled = false
-        AND cl.school_id = auth.get_user_school_id()
+        AND cl.school_id = public.get_user_school_id()
         -- Teacher is NOT accompanying the class
         AND (ca.accompanying_staff_ids IS NULL OR teacher_id_unnested != ALL(ca.accompanying_staff_ids))
         -- Teacher is NOT absent themselves
@@ -10200,7 +10200,7 @@ BEGIN
             SELECT staff_id FROM staff_absences
             WHERE date <= p_date
             AND COALESCE(end_date, date) >= p_date
-            AND school_id = auth.get_user_school_id()
+            AND school_id = public.get_user_school_id()
         )
         GROUP BY teacher_id_unnested, up.first_name, up.last_name
     ) freed_teacher
@@ -10209,7 +10209,7 @@ BEGIN
     WHERE cl.start_datetime::date = p_date
     AND ca.start_date <= p_date
     AND COALESCE(ca.end_date, ca.start_date) >= p_date
-    AND cl.school_id = auth.get_user_school_id()
+    AND cl.school_id = public.get_user_school_id()
     GROUP BY freed_teacher.teacher_id, freed_teacher.teacher_name, freed_teacher.lesson_count, freed_teacher.class_names
     ORDER BY freed_teacher.teacher_name;
 END;
@@ -10539,7 +10539,7 @@ v_code_exists boolean;
 v_attempts int := 0;
 v_max_attempts int := 100;
 BEGIN
-v_school_id := auth.get_user_school_id();
+v_school_id := public.get_user_school_id();
 IF v_school_id IS NULL THEN
 RETURN jsonb_build_object('success', false, 'error', 'No school context found');
 END IF;
@@ -10719,7 +10719,7 @@ DECLARE
   v_user_school_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -10761,7 +10761,7 @@ DECLARE
   v_school_id uuid;
   v_absences jsonb;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -10870,7 +10870,7 @@ CREATE FUNCTION public.get_student_interview_submission(p_student_id uuid, p_reg
   FROM public.student_course_wish_submissions
   WHERE student_id = p_student_id
     AND registration_period_id = p_registration_period_id
-    AND school_id = auth.get_user_school_id()  -- 🔑 CRITICAL: School isolation for RLS compliance
+    AND school_id = public.get_user_school_id()  -- 🔑 CRITICAL: School isolation for RLS compliance
   LIMIT 1;
 $$;
 
@@ -10887,7 +10887,7 @@ DECLARE
   v_stats jsonb;
 BEGIN
   -- Get current user's school ID using existing auth function
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'Access denied: No school context';
   END IF;
@@ -10963,7 +10963,7 @@ DECLARE
   subject_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -11014,7 +11014,7 @@ DECLARE
   subject_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -11066,7 +11066,7 @@ DECLARE
   result_json json;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -12819,7 +12819,7 @@ DECLARE
   v_template_data jsonb;
   v_template_name text;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context');
@@ -13057,7 +13057,7 @@ BEGIN
     -- Get current user context
     SELECT 
         ((auth.jwt() ->> 'user_metadata')::json ->> 'profile_id')::uuid,
-        auth.get_user_school_id()
+        public.get_user_school_id()
     INTO v_user_profile_id, v_school_id;
     
     -- Insert event log
@@ -14854,7 +14854,7 @@ BEGIN
   SELECT sd.school_id, sd.semester_id INTO v_school_id, v_semester_id
   FROM public.schedule_drafts sd WHERE sd.id = p_draft_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Draft % not found', p_draft_id; END IF;
-  IF auth.get_user_school_id() IS NOT NULL AND auth.get_user_school_id() <> v_school_id THEN
+  IF public.get_user_school_id() IS NOT NULL AND public.get_user_school_id() <> v_school_id THEN
     RAISE EXCEPTION 'Access denied: wrong school context';
   END IF;
 
@@ -15164,7 +15164,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Draft % not found', p_draft_id;
   END IF;
-  IF auth.get_user_school_id() IS NOT NULL AND auth.get_user_school_id() <> v_school_id THEN
+  IF public.get_user_school_id() IS NOT NULL AND public.get_user_school_id() <> v_school_id THEN
     RAISE EXCEPTION 'Access denied: wrong school context';
   END IF;
 
@@ -17717,7 +17717,7 @@ DECLARE
     v_user_school_id uuid;
 BEGIN
     -- Get current user's school for security check
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
     
     IF v_user_school_id IS NULL THEN
         RETURN json_build_object(
@@ -17825,7 +17825,7 @@ DECLARE
   v_semester_id uuid;
   v_draft_id uuid;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context');
@@ -17878,7 +17878,7 @@ DECLARE
     v_partner_school_id uuid;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
 
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, p_profile_id, 'User not associated with a school'::text;
@@ -18115,7 +18115,7 @@ DECLARE
   v_address_postal_code text;
   v_address_country text;
 BEGIN
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -18427,7 +18427,7 @@ DECLARE
   v_period_start_time time;
   v_period_end_time time;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   -- Validate school context
   IF v_school_id IS NULL THEN
@@ -19585,7 +19585,7 @@ DECLARE
   v_course_name text;
   v_school_id uuid;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context');
@@ -19637,7 +19637,7 @@ DECLARE
   v_status_note text;
 BEGIN
   -- Get school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
 
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -19685,7 +19685,7 @@ DECLARE
   v_teacher_id uuid;
 BEGIN
   -- Get user's school with validation
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -19736,7 +19736,7 @@ $$;
 
 COMMENT ON FUNCTION public.update_additional_teachers_react(p_class_id uuid, p_teacher_ids uuid[]) IS 'Update additional teachers for a class
 Used by: ClassManagement.tsx
-Security: DEFINER with school isolation via auth.get_user_school_id()
+Security: DEFINER with school isolation via public.get_user_school_id()
 Operation: Removes existing additional teachers, adds new ones
 Validation: Class and teacher ownership checks';
 
@@ -19769,7 +19769,7 @@ DECLARE
   v_old_room_id uuid;
 BEGIN
   -- Get user's school with validation
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -19906,7 +19906,7 @@ $$;
 
 COMMENT ON FUNCTION public.update_class_complete_react(p_class_id uuid, p_name text, p_year integer, p_grade_level integer, p_description text, p_color text, p_main_teacher_id uuid, p_room_id uuid, p_additional_teacher_ids uuid[]) IS 'PRODUCTION: Atomic class update function
 Used by: ClassManagement.tsx
-Security: DEFINER with school isolation via auth.get_user_school_id()
+Security: DEFINER with school isolation via public.get_user_school_id()
 Operation: All-in-one transaction for class properties, main teacher, room, and additional teachers
 Atomicity: Either ALL operations succeed or ALL fail - no partial updates
 Validation: Comprehensive input validation for production safety';
@@ -19923,7 +19923,7 @@ CREATE FUNCTION public.update_class_react(p_class_id uuid, p_name text DEFAULT N
 DECLARE
   v_user_school_id uuid;
 BEGIN
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
   END IF;
@@ -20031,7 +20031,7 @@ DECLARE
   v_update_values text[];
   v_sql text;
 BEGIN
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context');
@@ -20456,7 +20456,7 @@ DECLARE
     v_existing_phone_id uuid;
 BEGIN
     -- Get current user's school
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
 
     IF v_user_school_id IS NULL THEN
         RETURN QUERY SELECT false, p_profile_id, 'User not associated with a school'::text;
@@ -20759,7 +20759,7 @@ DECLARE
   v_room_school_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
 
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -20854,7 +20854,7 @@ CREATE FUNCTION public.update_room_react_alt(p_room_id uuid, p_name text DEFAULT
   v_room_school_id uuid;
 BEGIN
   -- Get current user's school
-  v_user_school_id := auth.get_user_school_id();
+  v_user_school_id := public.get_user_school_id();
 
   IF v_user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -21004,7 +21004,7 @@ BEGIN
   v_auth_user_id := (auth.jwt()->>'sub')::uuid;
   
   -- Get user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   
   IF v_school_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'No school context found');
@@ -21093,7 +21093,7 @@ DECLARE
   v_staff_exists BOOLEAN := FALSE;
 BEGIN
   -- Get current user's school context
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'Access denied: No school context';
   END IF;
@@ -21349,7 +21349,7 @@ DECLARE
   v_school_id uuid;
 BEGIN
   -- Validate school access
-  v_school_id := auth.get_user_school_id();
+  v_school_id := public.get_user_school_id();
   IF v_school_id IS NULL THEN
     RAISE EXCEPTION 'Access denied: No school context';
   END IF;
@@ -21479,7 +21479,7 @@ DECLARE
   class_hours_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -21543,7 +21543,7 @@ DECLARE
   grade_hours_school_id uuid;
 BEGIN
   -- Get the user's school_id
-  user_school_id := auth.get_user_school_id();
+  user_school_id := public.get_user_school_id();
   
   IF user_school_id IS NULL THEN
     RAISE EXCEPTION 'User not associated with a school';
@@ -21795,7 +21795,7 @@ DECLARE
     v_day_id INTEGER;
 BEGIN
     -- Security: Get user's school ID for RLS validation
-    v_user_school_id := auth.get_user_school_id();
+    v_user_school_id := public.get_user_school_id();
     
     -- Validate user can only modify their own school
     IF v_user_school_id IS NULL THEN
@@ -25804,7 +25804,7 @@ CREATE VIEW public.vw_react_class_absence_conflicts WITH (security_invoker='true
      CROSS JOIN LATERAL unnest(ca.class_ids) absent_class_id(absent_class_id))
      JOIN public.course_lessons cl ON ((cl.class_id = absent_class_id.absent_class_id)))
      JOIN public.course_list course ON ((cl.course_id = course.id)))
-  WHERE ((ca.school_id = auth.get_user_school_id()) AND (ca.status = 'active'::text) AND (cl.school_id = auth.get_user_school_id()) AND (cl.is_cancelled = false) AND (((cl.start_datetime)::date >= ca.start_date) AND ((cl.start_datetime)::date <= ca.end_date)) AND ((ca.start_time IS NULL) OR ((ca.start_time IS NOT NULL) AND (((cl.start_datetime)::time without time zone >= ca.start_time) AND ((cl.start_datetime)::time without time zone <= ca.end_time)))));
+  WHERE ((ca.school_id = public.get_user_school_id()) AND (ca.status = 'active'::text) AND (cl.school_id = public.get_user_school_id()) AND (cl.is_cancelled = false) AND (((cl.start_datetime)::date >= ca.start_date) AND ((cl.start_datetime)::date <= ca.end_date)) AND ((ca.start_time IS NULL) OR ((ca.start_time IS NOT NULL) AND (((cl.start_datetime)::time without time zone >= ca.start_time) AND ((cl.start_datetime)::time without time zone <= ca.end_time)))));
 
 
 --
@@ -25847,7 +25847,7 @@ CREATE VIEW public.vw_react_class_absences WITH (security_invoker='true') AS
         END AS date_display,
     ((CURRENT_DATE >= ca.start_date) AND (CURRENT_DATE <= ca.end_date)) AS is_current
    FROM public.class_absences ca
-  WHERE ((ca.school_id = auth.get_user_school_id()) AND (ca.status = 'active'::text));
+  WHERE ((ca.school_id = public.get_user_school_id()) AND (ca.status = 'active'::text));
 
 
 --
@@ -25901,7 +25901,7 @@ CREATE VIEW public.vw_react_classes WITH (security_invoker='true') AS
              LEFT JOIN public.profile_info_staff pis ON (((pis.profile_id = up2.id) AND (pis.school_id = up2.school_id))))
           WHERE ((scl2.class_id = c.id) AND (scl2.school_id = c.school_id))) AS teachers
    FROM public.structure_classes c
-  WHERE ((c.school_id = auth.get_user_school_id()) AND (COALESCE(c.is_active, true) = true))
+  WHERE ((c.school_id = public.get_user_school_id()) AND (COALESCE(c.is_active, true) = true))
   ORDER BY c.name;
 
 
@@ -25912,7 +25912,7 @@ CREATE VIEW public.vw_react_classes WITH (security_invoker='true') AS
 COMMENT ON VIEW public.vw_react_classes IS 'React view for ClassManagement component
 Used by: ClassManagement.tsx
 RLS: Enabled via security_invoker = true
-School isolation: Via auth.get_user_school_id()
+School isolation: Via public.get_user_school_id()
 Data: Classes with student counts, room assignments, teacher assignments
 Performance: Optimized with subqueries to avoid duplicate rows';
 
@@ -26126,7 +26126,7 @@ CREATE VIEW public.vw_react_draft_schedules WITH (security_invoker='true') AS
             WHEN (jsonb_typeof((schedule_drafts.current_version -> 'schedules'::text)) = 'array'::text) THEN (schedule_drafts.current_version -> 'schedules'::text)
             ELSE '[]'::jsonb
         END) schedule_item(value))
-  WHERE ((schedule_drafts.school_id = auth.get_user_school_id()) AND (schedule_drafts.current_version IS NOT NULL))
+  WHERE ((schedule_drafts.school_id = public.get_user_school_id()) AND (schedule_drafts.current_version IS NOT NULL))
   ORDER BY schedule_drafts.created_at DESC;
 
 
@@ -26137,7 +26137,7 @@ CREATE VIEW public.vw_react_draft_schedules WITH (security_invoker='true') AS
 COMMENT ON VIEW public.vw_react_draft_schedules IS 'SECURE: Draft schedule data with school isolation.
 Security measures:
 - WITH (security_invoker = true) for RLS enforcement  
-- Filters by auth.get_user_school_id() to prevent cross-school contamination
+- Filters by public.get_user_school_id() to prevent cross-school contamination
 - Used by: ScheduleDataAdapter.fetchDraftSchedules()
 Fixed: 2025-01-31 - Added critical school isolation';
 
@@ -26183,7 +26183,7 @@ CREATE VIEW public.vw_react_external_staff WITH (security_invoker='true') AS
            FROM public.course_lessons
           WHERE (course_lessons.primary_teacher_id IS NOT NULL)
           GROUP BY course_lessons.primary_teacher_id) lesson_stats ON ((up.id = lesson_stats.primary_teacher_id)))
-  WHERE (up.school_id = auth.get_user_school_id())
+  WHERE (up.school_id = public.get_user_school_id())
   ORDER BY cp.name, up.last_name, up.first_name;
 
 
@@ -26519,7 +26519,7 @@ CREATE VIEW public.vw_react_schedule_teachers AS
          LIMIT 1) AS email
    FROM (public.user_profiles up
      JOIN public.profile_info_staff pis ON ((up.id = pis.profile_id)))
-  WHERE ((up.school_id = auth.get_user_school_id()) AND (pis.status = 'active'::text) AND (EXISTS ( SELECT 1
+  WHERE ((up.school_id = public.get_user_school_id()) AND (pis.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM (public.user_roles ur
              JOIN public.roles r ON ((ur.role_id = r.id)))
           WHERE ((ur.user_profile_id = up.id) AND (ur.school_id = up.school_id) AND (r.name = ANY (ARRAY['Teacher'::text, 'Admin'::text, 'Super Admin'::text, 'Erzieher*innen'::text, 'Externe'::text]))))))
@@ -26572,7 +26572,7 @@ CREATE VIEW public.vw_react_school_information WITH (security_invoker='true') AS
            FROM (public.user_roles ur
              JOIN public.roles r ON ((ur.role_id = r.id)))
           WHERE ((ur.user_profile_id = p.id) AND (ur.school_id = s.id) AND (r.name = ANY (ARRAY['Admin'::text, 'Super Admin'::text]))))))))
-  WHERE (s.id = auth.get_user_school_id());
+  WHERE (s.id = public.get_user_school_id());
 
 
 --
@@ -26582,7 +26582,7 @@ CREATE VIEW public.vw_react_school_information WITH (security_invoker='true') AS
 COMMENT ON VIEW public.vw_react_school_information IS 'Purpose: School information for Settings component with logo and signature support
 Used by: Settings.jsx school information section  
 RLS: Enabled via security_invoker
-School isolation: Via auth.get_user_school_id() filtering
+School isolation: Via public.get_user_school_id() filtering
 Fields: Maps structure_schools to React component needs
 Logo: Uses logo_url field, not renamed from timezone
 Timezone: Kept as separate timezone field';
@@ -26840,7 +26840,7 @@ CREATE VIEW public.vw_react_student_documents AS
      JOIN public.document_types dt ON ((d.type_id = dt.id)))
      JOIN public.user_profiles up_student ON ((d.profile_id = up_student.id)))
      LEFT JOIN public.user_profiles up_uploaded ON ((d.uploaded_by = up_uploaded.id)))
-  WHERE (('student'::text = ANY (dt.applicable_roles)) AND (d.school_id = auth.get_user_school_id()));
+  WHERE (('student'::text = ANY (dt.applicable_roles)) AND (d.school_id = public.get_user_school_id()));
 
 
 --
@@ -27599,7 +27599,7 @@ CREATE VIEW public.vw_user_mfa_status AS
    FROM ((public.user_profiles up
      LEFT JOIN public.roles r ON ((up.role_id = r.id)))
      LEFT JOIN public.user_mfa_preferences ump ON ((up.id = ump.user_profile_id)))
-  WHERE (up.school_id = auth.get_user_school_id());
+  WHERE (up.school_id = public.get_user_school_id());
 
 
 --
@@ -32402,14 +32402,14 @@ ALTER TABLE ONLY public.user_trusted_devices
 -- Name: profile_info_external Admins and teachers can manage external staff; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins and teachers can manage external staff" ON public.profile_info_external USING (((school_id = auth.get_user_school_id()) AND (auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text, 'Teacher'::text]))));
+CREATE POLICY "Admins and teachers can manage external staff" ON public.profile_info_external USING (((school_id = public.get_user_school_id()) AND (auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text, 'Teacher'::text]))));
 
 
 --
 -- Name: documents Admins can manage school documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can manage school documents" ON public.documents USING (((school_id = auth.get_user_school_id()) AND auth.user_has_role('Admin'::text)));
+CREATE POLICY "Admins can manage school documents" ON public.documents USING (((school_id = public.get_user_school_id()) AND auth.user_has_role('Admin'::text)));
 
 
 --
@@ -32425,7 +32425,7 @@ CREATE POLICY "Enable realtime for authenticated users" ON public.staff_absences
 
 CREATE POLICY "Users can create edit log entries for their school's drafts" ON public.draft_edit_log FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_edit_log.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_edit_log.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
@@ -32434,7 +32434,7 @@ CREATE POLICY "Users can create edit log entries for their school's drafts" ON p
 
 CREATE POLICY "Users can create versions for their school's drafts" ON public.draft_versions FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_versions.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_versions.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
@@ -32455,7 +32455,7 @@ CREATE POLICY "Users can manage their own presence" ON public.draft_user_presenc
 -- Name: draft_schedule_items Users can modify their school's draft schedule items; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can modify their school's draft schedule items" ON public.draft_schedule_items USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY "Users can modify their school's draft schedule items" ON public.draft_schedule_items USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
@@ -32509,14 +32509,14 @@ CREATE POLICY "Users can only access staging_students from their school" ON publ
 
 CREATE POLICY "Users can view edit log for their school's drafts" ON public.draft_edit_log FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_edit_log.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_edit_log.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
 -- Name: profile_info_external Users can view external staff from their school; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can view external staff from their school" ON public.profile_info_external FOR SELECT USING ((school_id = auth.get_user_school_id()));
+CREATE POLICY "Users can view external staff from their school" ON public.profile_info_external FOR SELECT USING ((school_id = public.get_user_school_id()));
 
 
 --
@@ -32525,7 +32525,7 @@ CREATE POLICY "Users can view external staff from their school" ON public.profil
 
 CREATE POLICY "Users can view locks in their school's drafts" ON public.lesson_edit_locks FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = lesson_edit_locks.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = lesson_edit_locks.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
@@ -32534,7 +32534,7 @@ CREATE POLICY "Users can view locks in their school's drafts" ON public.lesson_e
 
 CREATE POLICY "Users can view others' presence in shared drafts" ON public.draft_user_presence FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_user_presence.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_user_presence.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
@@ -32543,14 +32543,14 @@ CREATE POLICY "Users can view others' presence in shared drafts" ON public.draft
 
 CREATE POLICY "Users can view presence in their school's drafts" ON public.draft_user_presence FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_user_presence.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_user_presence.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
 -- Name: draft_schedule_items Users can view their school's draft schedule items; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can view their school's draft schedule items" ON public.draft_schedule_items FOR SELECT USING ((school_id = auth.get_user_school_id()));
+CREATE POLICY "Users can view their school's draft schedule items" ON public.draft_schedule_items FOR SELECT USING ((school_id = public.get_user_school_id()));
 
 
 --
@@ -32559,7 +32559,7 @@ CREATE POLICY "Users can view their school's draft schedule items" ON public.dra
 
 CREATE POLICY "Users can view their school's draft versions" ON public.draft_versions FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = draft_versions.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = draft_versions.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
@@ -32569,14 +32569,14 @@ CREATE POLICY "Users can view their school's draft versions" ON public.draft_ver
 CREATE POLICY admin_access_mfa_security_events ON public.mfa_security_events TO authenticated USING ((EXISTS ( SELECT 1
    FROM (public.user_profiles up
      JOIN public.roles r ON ((up.role_id = r.id)))
-  WHERE ((up.id = auth.get_user_school_id()) AND (r.name = ANY (ARRAY['Admin'::text, 'Super Admin'::text]))))));
+  WHERE ((up.id = public.get_user_school_id()) AND (r.name = ANY (ARRAY['Admin'::text, 'Super Admin'::text]))))));
 
 
 --
 -- Name: class_absences admin_full_access_class_absences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY admin_full_access_class_absences ON public.class_absences TO authenticated USING (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = auth.get_user_school_id()))) WITH CHECK (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = auth.get_user_school_id())));
+CREATE POLICY admin_full_access_class_absences ON public.class_absences TO authenticated USING (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id()))) WITH CHECK (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id())));
 
 
 --
@@ -32854,217 +32854,217 @@ ALTER TABLE public.schedule_periods ENABLE ROW LEVEL SECURITY;
 -- Name: bulletin_post_users school_isolation_bulletin_post_users; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_bulletin_post_users ON public.bulletin_post_users TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_bulletin_post_users ON public.bulletin_post_users TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: bulletin_posts school_isolation_bulletin_posts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_bulletin_posts ON public.bulletin_posts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_bulletin_posts ON public.bulletin_posts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: bulletin_recurrences school_isolation_bulletin_recurrences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_bulletin_recurrences ON public.bulletin_recurrences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_bulletin_recurrences ON public.bulletin_recurrences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: change_log school_isolation_change_log; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_change_log ON public.change_log TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_change_log ON public.change_log TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: class_absences school_isolation_class_absences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_class_absences ON public.class_absences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_class_absences ON public.class_absences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: contacts school_isolation_contacts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_contacts ON public.contacts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_contacts ON public.contacts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: cooperation_partners school_isolation_cooperation_partners; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_cooperation_partners ON public.cooperation_partners TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_cooperation_partners ON public.cooperation_partners TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_allocation_drafts school_isolation_course_allocation_drafts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_allocation_drafts ON public.course_allocation_drafts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_allocation_drafts ON public.course_allocation_drafts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_applications school_isolation_course_applications; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_applications ON public.course_applications TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_applications ON public.course_applications TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_enrollments school_isolation_course_enrollments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_enrollments ON public.course_enrollments TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_enrollments ON public.course_enrollments TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_lessons school_isolation_course_lessons; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_lessons ON public.course_lessons TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_lessons ON public.course_lessons TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_list school_isolation_course_list; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_list ON public.course_list TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_list ON public.course_list TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_notes school_isolation_course_notes; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_notes ON public.course_notes TO authenticated USING ((school_id = (auth.get_user_school_id())::text)) WITH CHECK ((school_id = (auth.get_user_school_id())::text));
+CREATE POLICY school_isolation_course_notes ON public.course_notes TO authenticated USING ((school_id = (public.get_user_school_id())::text)) WITH CHECK ((school_id = (public.get_user_school_id())::text));
 
 
 --
 -- Name: course_offers school_isolation_course_offers; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_offers ON public.course_offers TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_offers ON public.course_offers TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_possible_times school_isolation_course_possible_times; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_possible_times ON public.course_possible_times TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_possible_times ON public.course_possible_times TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_registration_windows school_isolation_course_registration_windows; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_registration_windows ON public.course_registration_windows TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_registration_windows ON public.course_registration_windows TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: course_schedules school_isolation_course_schedules; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_course_schedules ON public.course_schedules TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_course_schedules ON public.course_schedules TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: document_types school_isolation_document_types; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_document_types ON public.document_types TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_document_types ON public.document_types TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: families school_isolation_families; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_families ON public.families TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_families ON public.families TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: family_member_child_links school_isolation_family_member_child_links; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_family_member_child_links ON public.family_member_child_links TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_family_member_child_links ON public.family_member_child_links TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: family_members school_isolation_family_members; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_family_members ON public.family_members TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_family_members ON public.family_members TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: lesson_diary_entries school_isolation_lesson_diary_entries; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_lesson_diary_entries ON public.lesson_diary_entries TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_lesson_diary_entries ON public.lesson_diary_entries TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: mfa_security_events school_isolation_mfa_security_events; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_mfa_security_events ON public.mfa_security_events TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_mfa_security_events ON public.mfa_security_events TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: profile_info_family_member school_isolation_profile_info_family_member; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_profile_info_family_member ON public.profile_info_family_member TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_profile_info_family_member ON public.profile_info_family_member TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: profile_info_staff school_isolation_profile_info_staff; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_profile_info_staff ON public.profile_info_staff TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_profile_info_staff ON public.profile_info_staff TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: profile_info_staff_backup_migration school_isolation_profile_info_staff_backup_migration; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_profile_info_staff_backup_migration ON public.profile_info_staff_backup_migration TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_profile_info_staff_backup_migration ON public.profile_info_staff_backup_migration TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: profile_info_student school_isolation_profile_info_student; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_profile_info_student ON public.profile_info_student TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_profile_info_student ON public.profile_info_student TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: published_drafts school_isolation_published_drafts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_published_drafts ON public.published_drafts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_published_drafts ON public.published_drafts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: registration_periods school_isolation_registration_periods; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_registration_periods ON public.registration_periods TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_registration_periods ON public.registration_periods TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: schedule_calendar_exceptions school_isolation_schedule_calendar_exceptions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_schedule_calendar_exceptions ON public.schedule_calendar_exceptions TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_schedule_calendar_exceptions ON public.schedule_calendar_exceptions TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: schedule_daily_rostering school_isolation_schedule_daily_rostering; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_schedule_daily_rostering ON public.schedule_daily_rostering TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_schedule_daily_rostering ON public.schedule_daily_rostering TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
@@ -33073,268 +33073,268 @@ CREATE POLICY school_isolation_schedule_daily_rostering ON public.schedule_daily
 
 CREATE POLICY school_isolation_schedule_draft_versions ON public.schedule_draft_versions TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = schedule_draft_versions.draft_id) AND (sd.school_id = auth.get_user_school_id()))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((sd.id = schedule_draft_versions.draft_id) AND (sd.school_id = public.get_user_school_id()))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.schedule_drafts sd
-  WHERE ((sd.id = schedule_draft_versions.draft_id) AND (sd.school_id = auth.get_user_school_id())))));
+  WHERE ((sd.id = schedule_draft_versions.draft_id) AND (sd.school_id = public.get_user_school_id())))));
 
 
 --
 -- Name: schedule_drafts school_isolation_schedule_drafts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_schedule_drafts ON public.schedule_drafts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_schedule_drafts ON public.schedule_drafts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: schedule_periods school_isolation_schedule_periods; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_schedule_periods ON public.schedule_periods TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_schedule_periods ON public.schedule_periods TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_absence_comments school_isolation_staff_absence_comments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_absence_comments ON public.staff_absence_comments TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_absence_comments ON public.staff_absence_comments TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_absences school_isolation_staff_absences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_absences ON public.staff_absences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_absences ON public.staff_absences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_class_links school_isolation_staff_class_links; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_class_links ON public.staff_class_links TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_class_links ON public.staff_class_links TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_contracts school_isolation_staff_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_contracts ON public.staff_contracts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_contracts ON public.staff_contracts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: documents school_isolation_staff_documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_documents ON public.documents TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_documents ON public.documents TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_duty_plan school_isolation_staff_duty_plan; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_duty_plan ON public.staff_duty_plan TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_duty_plan ON public.staff_duty_plan TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_subjects school_isolation_staff_subjects; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_subjects ON public.staff_subjects TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_subjects ON public.staff_subjects TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_work_contracts school_isolation_staff_work_contracts; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_work_contracts ON public.staff_work_contracts TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_work_contracts ON public.staff_work_contracts TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: staff_yearly_preferences school_isolation_staff_yearly_preferences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_staff_yearly_preferences ON public.staff_yearly_preferences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_staff_yearly_preferences ON public.staff_yearly_preferences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_classes school_isolation_structure_classes; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_classes ON public.structure_classes TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_classes ON public.structure_classes TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_rooms school_isolation_structure_rooms; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_rooms ON public.structure_rooms TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_rooms ON public.structure_rooms TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_school_days school_isolation_structure_school_days; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_school_days ON public.structure_school_days TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_school_days ON public.structure_school_days TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_school_semesters school_isolation_structure_school_semesters; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_school_semesters ON public.structure_school_semesters TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_school_semesters ON public.structure_school_semesters TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_school_years school_isolation_structure_school_years; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_school_years ON public.structure_school_years TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_school_years ON public.structure_school_years TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: structure_schools school_isolation_structure_schools; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_structure_schools ON public.structure_schools TO authenticated USING ((id = auth.get_user_school_id())) WITH CHECK ((id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_structure_schools ON public.structure_schools TO authenticated USING ((id = public.get_user_school_id())) WITH CHECK ((id = public.get_user_school_id()));
 
 
 --
 -- Name: student_absence_notes school_isolation_student_absence_notes; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_absence_notes ON public.student_absence_notes TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_absence_notes ON public.student_absence_notes TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_absence_recurrences school_isolation_student_absence_recurrences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_absence_recurrences ON public.student_absence_recurrences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_absence_recurrences ON public.student_absence_recurrences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_attendance_logs school_isolation_student_attendance_logs; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_attendance_logs ON public.student_attendance_logs TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_attendance_logs ON public.student_attendance_logs TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_course_wish_choices school_isolation_student_course_wish_choices; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_course_wish_choices ON public.student_course_wish_choices TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_course_wish_choices ON public.student_course_wish_choices TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_course_wish_submissions school_isolation_student_course_wish_submissions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_course_wish_submissions ON public.student_course_wish_submissions TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_course_wish_submissions ON public.student_course_wish_submissions TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_daily_log school_isolation_student_daily_log; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_daily_log ON public.student_daily_log TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_daily_log ON public.student_daily_log TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_emergency_information school_isolation_student_emergency_information; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_emergency_information ON public.student_emergency_information TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_emergency_information ON public.student_emergency_information TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_pickup_arrangement_overrides school_isolation_student_pickup_arrangement_overrides; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_pickup_arrangement_overrides ON public.student_pickup_arrangement_overrides TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_pickup_arrangement_overrides ON public.student_pickup_arrangement_overrides TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_presence_events school_isolation_student_presence_events; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_presence_events ON public.student_presence_events TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_presence_events ON public.student_presence_events TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: student_weekly_pickup_arrangements school_isolation_student_weekly_pickup_arrangements; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_student_weekly_pickup_arrangements ON public.student_weekly_pickup_arrangements TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_student_weekly_pickup_arrangements ON public.student_weekly_pickup_arrangements TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: subject_class_hours school_isolation_subject_class_hours; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_subject_class_hours ON public.subject_class_hours TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_subject_class_hours ON public.subject_class_hours TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: subject_grade_hours school_isolation_subject_grade_hours; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_subject_grade_hours ON public.subject_grade_hours TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_subject_grade_hours ON public.subject_grade_hours TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: subjects school_isolation_subjects; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_subjects ON public.subjects TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_subjects ON public.subjects TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: substitutions school_isolation_substitutions; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_substitutions ON public.substitutions TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_substitutions ON public.substitutions TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_codes school_isolation_user_codes; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_codes ON public.user_codes TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_codes ON public.user_codes TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_group_members school_isolation_user_group_members; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_group_members ON public.user_group_members TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_group_members ON public.user_group_members TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_groups school_isolation_user_groups; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_groups ON public.user_groups TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_groups ON public.user_groups TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_mfa_preferences school_isolation_user_mfa_preferences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_mfa_preferences ON public.user_mfa_preferences TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_mfa_preferences ON public.user_mfa_preferences TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_profiles school_isolation_user_profiles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_profiles ON public.user_profiles TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_profiles ON public.user_profiles TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
 -- Name: user_roles school_isolation_user_roles; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY school_isolation_user_roles ON public.user_roles TO authenticated USING ((school_id = auth.get_user_school_id())) WITH CHECK ((school_id = auth.get_user_school_id()));
+CREATE POLICY school_isolation_user_roles ON public.user_roles TO authenticated USING ((school_id = public.get_user_school_id())) WITH CHECK ((school_id = public.get_user_school_id()));
 
 
 --
@@ -33343,9 +33343,9 @@ CREATE POLICY school_isolation_user_roles ON public.user_roles TO authenticated 
 
 CREATE POLICY school_isolation_user_trusted_devices ON public.user_trusted_devices TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.user_profiles up
-  WHERE ((up.id = user_trusted_devices.user_profile_id) AND (up.school_id = auth.get_user_school_id()))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((up.id = user_trusted_devices.user_profile_id) AND (up.school_id = public.get_user_school_id()))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.user_profiles up
-  WHERE ((up.id = user_trusted_devices.user_profile_id) AND (up.school_id = auth.get_user_school_id())))));
+  WHERE ((up.id = user_trusted_devices.user_profile_id) AND (up.school_id = public.get_user_school_id())))));
 
 
 --
