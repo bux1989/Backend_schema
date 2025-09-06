@@ -10,52 +10,42 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/config.toml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/config.toml'
+      - '.github/workflows/supabase-migration-ci-phased.yml'
   workflow_dispatch:
+    inputs:
+      phase:
+        description: "Which phase to run"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - tables
+          - foreign_keys
+          - indexes
+          - views_functions
+          - triggers_policies
 
 jobs:
-  # Optional: basic PR validation without touching the DB
-  validate-migrations:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Validate migration files (basic)
-        run: |
-          set -euo pipefail
-          files=$(find supabase/migrations -name "*.sql" -type f || true)
-          if [ -z "$files" ]; then
-            echo "❌ No migration files found"
-            exit 1
-          fi
-          echo "$files" | sed 's/^/ - /'
-          echo "✅ Migration validation completed"
-
-  migrate:
+  migrate-phased:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      # Quiet the CLI
+      # Quiet CLI and fail fast on locks
       DEBUG: ""
       SUPABASE_DB_DEBUG: "0"
       SUPABASE_LOG_LEVEL: "warn"
-      # Fail fast on locks; don’t hang forever (may not affect CLI internals but harmless)
       PGOPTIONS: -c lock_timeout=5s -c statement_timeout=20min -c idle_in_transaction_session_timeout=1min
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: latest
 
@@ -79,25 +69,136 @@ jobs:
           SQL
           supabase db execute --file /tmp/ping.sql
 
-      - name: Apply migrations (quiet + artifact)
+      - name: Stage all migrations for phase filtering
         shell: bash
         run: |
           set -euo pipefail
-          echo "::group::supabase db push"
-          if ! supabase db push > push.log 2>&1; then
-            echo "❌ Migration failed. Last 200 lines:"
-            tail -n 200 push.log || true
+          mkdir -p /tmp/all supabase/migrations
+          shopt -s nullglob
+          cp supabase/migrations/*.sql /tmp/all/ || true
+          echo "Staged files:"
+          ls -1 /tmp/all || true
+
+      - name: Set PHASE env
+        run: echo "PHASE=${{ github.event_name == 'workflow_dispatch' && inputs.phase || 'all' }}" >> $GITHUB_ENV
+
+      # 01 Tables
+      - name: Apply 01_tables
+        if: ${{ env.PHASE == 'all' || env.PHASE == 'tables' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f supabase/migrations/*.sql || true
+          shopt -s nullglob
+          files=(/tmp/all/*-01_*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ℹ️ No 01_* files found; skipping"
+          else
+            cp "${files[@]}" supabase/migrations/
+            echo "::group::supabase db push (01)"
+            if ! supabase db push > push-01.log 2>&1; then
+              tail -n 200 push-01.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
             echo "::endgroup::"
-            exit 1
           fi
-          echo "✅ Migrations applied successfully."
-          echo "::endgroup::"
+
+      # 02 Foreign Keys
+      - name: Apply 02_foreign_keys
+        if: ${{ env.PHASE == 'all' || env.PHASE == 'foreign_keys' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f supabase/migrations/*.sql || true
+          shopt -s nullglob
+          files=(/tmp/all/*-02_*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ℹ️ No 02_* files found; skipping"
+          else
+            cp "${files[@]}" supabase/migrations/
+            echo "::group::supabase db push (02)"
+            if ! supabase db push > push-02.log 2>&1; then
+              tail -n 200 push-02.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
+            echo "::endgroup::"
+          fi
+
+      # 03 Indexes
+      - name: Apply 03_indexes
+        if: ${{ env.PHASE == 'all' || env.PHASE == 'indexes' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f supabase/migrations/*.sql || true
+          shopt -s nullglob
+          files=(/tmp/all/*-03_*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ℹ️ No 03_* files found; skipping"
+          else
+            cp "${files[@]}" supabase/migrations/
+            echo "::group::supabase db push (03)"
+            # If you use CREATE INDEX CONCURRENTLY and CLI complains about transactions,
+            # split those into a separate file and use `supabase db execute` instead.
+            if ! supabase db push > push-03.log 2>&1; then
+              tail -n 200 push-03.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
+            echo "::endgroup::"
+          fi
+
+      # 04 Views & Functions
+      - name: Apply 04_views_functions
+        if: ${{ env.PHASE == 'all' || env.PHASE == 'views_functions' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f supabase/migrations/*.sql || true
+          shopt -s nullglob
+          files=(/tmp/all/*-04_*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ℹ️ No 04_* files found; skipping"
+          else
+            cp "${files[@]}" supabase/migrations/
+            echo "::group::supabase db push (04)"
+            if ! supabase db push > push-04.log 2>&1; then
+              tail -n 200 push-04.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
+            echo "::endgroup::"
+          fi
+
+      # 05 Triggers & Policies
+      - name: Apply 05_triggers_policies
+        if: ${{ env.PHASE == 'all' || env.PHASE == 'triggers_policies' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f supabase/migrations/*.sql || true
+          shopt -s nullglob
+          files=(/tmp/all/*-05_*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ℹ️ No 05_* files found; skipping"
+          else
+            cp "${files[@]}" supabase/migrations/
+            echo "::group::supabase db push (05)"
+            if ! supabase db push > push-05.log 2>&1; then
+              tail -n 200 push-05.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
+            echo "::endgroup::"
+          fi
 
       - name: Verify migration status
+        if: ${{ success() && (env.PHASE == 'all') }}
         run: supabase migration list
 
-      # If a lock timeout or other failure happened, print blockers
-      - name: Diagnose blocking (if previous step failed)
+      - name: Diagnose blocking (if a phase failed)
         if: failure()
         shell: bash
         run: |
@@ -131,12 +232,19 @@ jobs:
           )
           SELECT * FROM blocked;
           SQL
+          # Linked already; no --project-ref needed
           supabase db execute --file /tmp/locks.sql || true
           echo "::endgroup::"
 
-      - name: Upload full logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: supabase-push-logs
-          path: push.log
+          name: supabase-phased-logs
+          path: |
+            push-01.log
+            push-02.log
+            push-03.log
+            push-04.log
+            push-05.log
+          if-no-files-found: ignore
