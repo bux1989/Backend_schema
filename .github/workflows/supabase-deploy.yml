@@ -111,8 +111,8 @@ jobs:
           cat > /tmp/migration_with_lock.sql << 'EOF'
           DO $$
           BEGIN
-            # Acquire advisory lock (using a unique key for this project)
-            # The lock key should be unique to your project
+            -- Acquire advisory lock (using a unique key for this project)
+            -- The lock key should be unique to your project
             IF NOT pg_try_advisory_lock(12345678) THEN
               RAISE EXCEPTION 'Another migration process is already running. ' 
                               || 'Please try again later.';
