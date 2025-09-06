@@ -1,9 +1,9 @@
 name: Supabase Migration CI
 
-# Concurrency: separate groups per event + ref so PR validation won't cancel push/dispatch runs
+# Concurrency group to ensure only one migration run executes at a time
 concurrency:
-  group: supabase-migration-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'pull_request' }}
+  group: supabase-migration
+  cancel-in-progress: true
 
 on:
   push:
@@ -65,7 +65,7 @@ jobs:
   # Migration job that only runs on push to main or manual dispatch
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 90  # Ensure overall job timeout is >= 10 minutes
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -80,6 +80,12 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
+
+      # Install psql early so we can log into the DB from the very beginning
+      - name: Install PostgreSQL client (psql)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Verify environment variables
         run: |
@@ -98,6 +104,47 @@ jobs:
           fi
           echo "✅ All required environment variables are set"
 
+      # Initialize a lightweight CI logging schema/tables you can view in Supabase Studio
+      - name: Init CI logging tables
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -v ON_ERROR_STOP=1 -c "create schema if not exists ci;"
+          psql "$DB_CONN" -v ON_ERROR_STOP=1 -c "create table if not exists ci.migration_runs (
+            run_id text primary key,
+            workflow text,
+            job text,
+            branch text,
+            commit_sha text,
+            actor text,
+            started_at timestamptz default now(),
+            finished_at timestamptz,
+            status text
+          );"
+          psql "$DB_CONN" -v ON_ERROR_STOP=1 -c "create table if not exists ci.migration_events (
+            id bigserial primary key,
+            run_id text references ci.migration_runs(run_id) on delete cascade,
+            at timestamptz default now(),
+            phase text,
+            step text,
+            message text
+          );"
+
+      - name: Log run started
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "RUN_ID=${GITHUB_RUN_ID}" >> $GITHUB_ENV
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -v ON_ERROR_STOP=1 -c "
+            insert into ci.migration_runs (run_id, workflow, job, branch, commit_sha, actor, status)
+            values ('${GITHUB_RUN_ID}', '${GITHUB_WORKFLOW}', '${GITHUB_JOB}', '${GITHUB_REF}', '${GITHUB_SHA}', '${GITHUB_ACTOR}', 'running')
+            on conflict (run_id) do nothing;"
+          psql "$DB_CONN" -v ON_ERROR_STOP=1 -c "
+            insert into ci.migration_events (run_id, phase, step, message)
+            values ('${GITHUB_RUN_ID}', 'start', 'bootstrap', 'Run started');"
+
       - name: Link to Supabase project
         timeout-minutes: 10
         run: |
@@ -105,16 +152,29 @@ jobs:
           supabase link --project-ref "$SUPABASE_PROJECT_ID" \
             --password "$SUPABASE_DB_PASSWORD" --debug
 
+      - name: Log after link
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'linked', 'link', 'Project linked');"
+
       - name: Check migration status
         timeout-minutes: 10
         run: |
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Install PostgreSQL client (psql)
+      - name: Log after status check
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'preflight', 'status', 'Status checked');"
 
       - name: Show remote migration records
         env:
@@ -162,14 +222,29 @@ jobs:
           echo "📋 Migration status after repair:"
           supabase migration list --debug
 
+      - name: Log before push
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'push_start', 'db_push', 'Starting db push');"
+
       - name: Run migrations
         timeout-minutes: 30
         run: |
           echo "🚀 Running migrations..."
-          # For very large DDL, consider a direct DB URL (uncomment next two lines):
-          # export SUPABASE_DB_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_ID}.supabase.co:5432/postgres"
-          # supabase db push --debug --db-url "$SUPABASE_DB_URL"
           supabase db push --debug
+
+      - name: Log after push
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'push_done', 'db_push', 'db push finished');"
 
       - name: Verify migration completion
         timeout-minutes: 10
@@ -182,12 +257,33 @@ jobs:
           psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -c \
             "select version, name, coalesce(array_length(statements,1),0) as stmt_count from supabase_migrations.schema_migrations order by version;"
 
-      - name: List user tables (non-system schemas)
-        timeout-minutes: 5
+      # Final status markers (visible in Supabase Studio)
+      - name: Mark run success
+        if: ${{ success() }}
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          echo "📚 Listing tables in non-system schemas:"
-          psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -Atc \
-            "select table_schema, table_name from information_schema.tables where table_schema not in ('pg_catalog','information_schema') order by 1,2 limit 200;"
-          echo "Migration workflow completed successfully!"
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "update ci.migration_runs set finished_at = now(), status = 'success' where run_id = '${RUN_ID}';"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'done', 'complete', 'Run finished successfully');"
+
+      - name: Mark run failed
+        if: ${{ failure() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "update ci.migration_runs set finished_at = now(), status = 'failure' where run_id = '${RUN_ID}';"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'done', 'complete', 'Run failed');"
+
+      - name: Mark run cancelled
+        if: ${{ cancelled() }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DB_CONN="postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+          psql "$DB_CONN" -c "update ci.migration_runs set finished_at = now(), status = 'cancelled' where run_id = '${RUN_ID}';"
+          psql "$DB_CONN" -c "insert into ci.migration_events (run_id, phase, step, message)
+            values ('${RUN_ID}', 'done', 'complete', 'Run cancelled');"
