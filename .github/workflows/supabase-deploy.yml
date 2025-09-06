@@ -1,18 +1,26 @@
 name: Supabase Migration CI
+
+concurrency:
+  group: supabase-migrations-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches: [ main ]
     paths: 
       - 'supabase/migrations/**'
+      - 'supabase/config.toml'
   pull_request:
     branches: [ main ]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/config.toml'
   workflow_dispatch:
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -26,6 +34,14 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
+
+      - name: Cache Supabase CLI
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/supabase
+          key: ${{ runner.os }}-supabase-${{ hashFiles('supabase/config.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-supabase-
 
       - name: Verify environment variables
         run: |
@@ -58,9 +74,22 @@ jobs:
         run: |
           echo "🚀 Running migrations non-interactively with debug output..."
           supabase db push --debug
+        continue-on-error: false
 
       - name: Verify migration completion
         run: |
           echo "✅ Verifying migration completion..."
           supabase migration list --debug
           echo "Migration workflow completed successfully!"
+
+      - name: Post-migration validation
+        run: |
+          echo "🔍 Performing post-migration validation..."
+          # Check if all migrations were applied successfully
+          PENDING_MIGRATIONS=$(supabase migration list --format json | jq '[.[] | select(.applied == false)] | length')
+          if [ "$PENDING_MIGRATIONS" -gt 0 ]; then
+            echo "❌ Found $PENDING_MIGRATIONS pending migration(s)"
+            exit 1
+          else
+            echo "✅ All migrations applied successfully"
+          fi
