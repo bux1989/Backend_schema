@@ -3,7 +3,7 @@ name: Supabase Migration CI
 # Concurrency group to ensure only one migration run executes at a time
 concurrency:
   group: supabase-migration
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 on:
   push:
@@ -59,6 +59,7 @@ jobs:
   # Migration job that only runs on push to main or manual dispatch
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Add overall job timeout
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -92,30 +93,40 @@ jobs:
           echo "✅ All required environment variables are set"
 
       - name: Link to Supabase project
+        timeout-minutes: 3
         run: |
           echo "🔗 Linking to Supabase project: $SUPABASE_PROJECT_ID"
           supabase link --project-ref "$SUPABASE_PROJECT_ID" \
             --password "$SUPABASE_DB_PASSWORD" --debug
 
       - name: Check migration status
+        timeout-minutes: 2
         run: |
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Repair migration history
+      - name: Repair migration conflicts
+        timeout-minutes: 5
         run: |
-          echo "🔧 Repairing migration history to resolve mismatches..."
+          echo "🔧 Checking for migration conflicts..."
           
-          # Repair the specific migration that exists remotely but not locally
-          echo "Marking remote migration 20250906121030 as reverted..."
-          if ! supabase migration repair --status reverted 20250906121030 --debug; then
-            echo "⚠️ Could not repair migration 20250906121030, continuing anyway..."
-          fi
+          # Get the list of remote migrations that aren't local
+          remote_only_migrations=$(supabase migration list --debug 2>/dev/null | grep -E '^\s*\|\s*20[0-9]{12}\s*\|' | grep -v 'Local' || true)
           
-          # Mark the local migration as applied in the history
-          echo "Marking local migration 20250906121041 as applied..."
-          if ! supabase migration repair --status applied 20250906121041 --debug; then
-            echo "⚠️ Could not repair migration 20250906121041, continuing anyway..."
+          if [ -n "$remote_only_migrations" ]; then
+            echo "Found remote-only migrations, attempting repair..."
+            
+            # Extract migration versions (this gets the specific migration we saw: 20250906121030)
+            remote_versions=$(echo "$remote_only_migrations" | awk '{print $2}' | grep '^20[0-9]{12}$' || true)
+            
+            for version in $remote_versions; do
+              echo "Marking migration $version as reverted..."
+              supabase migration repair --status reverted "$version" --debug || {
+                echo "⚠️  Failed to repair migration $version, continuing..."
+              }
+            done
+          else
+            echo "✅ No migration conflicts detected"
           fi
           
           # Show updated status
@@ -123,12 +134,13 @@ jobs:
           supabase migration list --debug
 
       - name: Run migrations
+        timeout-minutes: 5
         run: |
           echo "🚀 Running migrations..."
-          # Now try to push the migrations
           supabase db push --debug
 
       - name: Verify migration completion
+        timeout-minutes: 2
         run: |
           echo "✅ Verifying migration completion..."
           supabase migration list --debug
