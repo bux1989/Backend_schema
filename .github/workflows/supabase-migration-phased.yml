@@ -35,7 +35,9 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      # Quiet CLI and fail fast on locks
+      # Optional: full Postgres URI to enable diagnostics with psql (copy from Dashboard)
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      # Keep logs quiet; fail fast on locks
       DEBUG: ""
       SUPABASE_DB_DEBUG: "0"
       SUPABASE_LOG_LEVEL: "warn"
@@ -59,15 +61,6 @@ jobs:
 
       - name: Link to Supabase project (non-interactive)
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
-
-      - name: Quick DB ping (sanity check)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/ping.sql <<'SQL'
-          SELECT current_user, current_database();
-          SQL
-          supabase db execute --file /tmp/ping.sql
 
       - name: Stage all migrations for phase filtering
         shell: bash
@@ -140,8 +133,6 @@ jobs:
           else
             cp "${files[@]}" supabase/migrations/
             echo "::group::supabase db push (03)"
-            # If you use CREATE INDEX CONCURRENTLY and CLI complains about transactions,
-            # split those into a separate file and use `supabase db execute` instead.
             if ! supabase db push > push-03.log 2>&1; then
               tail -n 200 push-03.log || true
               echo "::endgroup::"
@@ -198,11 +189,15 @@ jobs:
         if: ${{ success() && (env.PHASE == 'all') }}
         run: supabase migration list
 
-      - name: Diagnose blocking (if a phase failed)
-        if: failure()
+      # Optional blocking diagnostics using psql if SUPABASE_DB_URL is provided
+      - name: Diagnose blocking with psql
+        if: ${{ failure() && env.SUPABASE_DB_URL != '' }}
         shell: bash
         run: |
-          echo "::group::Blocking diagnostics"
+          set -euo pipefail
+          echo "::group::Blocking diagnostics (psql)"
+          sudo apt-get update -y >/dev/null 2>&1 || true
+          sudo apt-get install -y postgresql-client >/dev/null 2>&1 || true
           cat > /tmp/locks.sql <<'SQL'
           SELECT now() AS now, pid, wait_event_type, wait_event, state,
                  age(clock_timestamp(), query_start) AS running_for,
@@ -211,29 +206,9 @@ jobs:
           FROM pg_stat_activity
           WHERE state <> 'idle'
           ORDER BY query_start;
-
-          WITH blocked AS (
-            SELECT blocked_locks.pid AS blocked_pid, blocked_activity.query AS blocked_query,
-                   blocking_locks.pid AS blocking_pid, blocking_activity.query AS blocking_query,
-                   blocked_activity.query_start AS blocked_since
-            FROM pg_locks blocked_locks
-            JOIN pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
-            JOIN pg_locks blocking_locks ON blocking_locks.locktype = blocked_locks.locktype
-                 AND blocking_locks.DATABASE IS NOT DISTINCT FROM blocked_locks.DATABASE
-                 AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
-                 AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
-                 AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
-                 AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
-                 AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
-                 AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
-                 AND blocking_locks.pid <> blocked_locks.pid
-            JOIN pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
-            WHERE NOT blocked_locks.GRANTED
-          )
-          SELECT * FROM blocked;
           SQL
-          # Linked already; no --project-ref needed
-          supabase db execute --file /tmp/locks.sql || true
+          PGPASSWORD="$(echo "$SUPABASE_DB_URL" | sed -n 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/p')" \
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f /tmp/locks.sql || true
           echo "::endgroup::"
 
       - name: Upload logs
