@@ -1,8 +1,7 @@
 name: Force Supabase Migration
 on:
   workflow_dispatch:
-jobs
-:
+jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
