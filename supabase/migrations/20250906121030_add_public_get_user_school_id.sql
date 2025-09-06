@@ -1,6 +1,6 @@
 -- Reads the user's school_id from the JWT claims set by Supabase Auth.
 -- Adjust the 'school_id' key below if your JWT claim uses a different name.
-create or replace function auth.get_user_school_id()
+create or replace function public.get_user_school_id()
 returns uuid
 language sql
 stable
@@ -11,4 +11,4 @@ as $$
          )::uuid
 $$;
 
-grant execute on function auth.get_user_school_id() to anon, authenticated, service_role;
+grant execute on function public.get_user_school_id() to anon, authenticated, service_role;
