@@ -1,8 +1,11 @@
 --
--- Migration: Add Auth Helper Functions for Policies
--- This migration adds the missing auth schema helper functions that are referenced
--- by existing policies but were not defined in the previous schema migration.
+-- Migration: Add Auth Helper Functions for Policies (EARLY)
+-- This migration adds the auth schema helper functions that are referenced
+-- by the main schema migration. Must run BEFORE 20250906121041_schema_app_only.sql
 --
+
+-- Create auth schema if it doesn't exist (Supabase usually provides this, but ensuring portability)
+CREATE SCHEMA IF NOT EXISTS auth;
 
 --
 -- Name: auth.get_user_role(); Type: FUNCTION; Schema: auth; Owner: -
@@ -127,3 +130,13 @@ BEGIN
     RETURN COALESCE(v_family_ids, ARRAY[]::uuid[]);
 END;
 $$;
+
+--
+-- Grant EXECUTE permissions to authenticated and anonymous users
+-- These functions are called within RLS policies, so they need to be executable
+-- by the roles that trigger policy evaluation
+--
+GRANT EXECUTE ON FUNCTION auth.get_user_role() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION auth.user_has_role(text) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION auth.get_profile_id() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION auth.get_user_family_ids() TO authenticated, anon;
