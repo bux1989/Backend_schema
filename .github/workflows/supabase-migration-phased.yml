@@ -35,7 +35,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      # Quiet CLI; fail fast on locks
       DEBUG: ""
       SUPABASE_DB_DEBUG: "0"
       SUPABASE_LOG_LEVEL: "warn"
@@ -59,6 +58,17 @@ jobs:
 
       - name: Link to Supabase project (non-interactive)
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Ensure Supabase config exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f supabase/config.toml ]; then
+            echo "supabase/config.toml not found; generating with 'supabase init -y'"
+            supabase init -y
+          else
+            echo "Found existing supabase/config.toml"
+          fi
 
       - name: Detect migration files
         id: detect
@@ -85,11 +95,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "Applying single migration file: $SINGLE_FILE"
-          mkdir -p /tmp/single-work/supabase/migrations
-          cp supabase/config.toml /tmp/single-work/supabase/config.toml
-          cp "$SINGLE_FILE" /tmp/single-work/supabase/migrations/
           echo "::group::supabase db push (single-file)"
-          if ! supabase db push --workdir /tmp/single-work > push-all.log 2>&1; then
+          if ! supabase db push > push-all.log 2>&1; then
             tail -n 200 push-all.log || true
             echo "::endgroup::"
             exit 1
@@ -120,12 +127,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/phase-01/supabase/migrations
-          cp supabase/config.toml /tmp/phase-01/supabase/config.toml
           shopt -s nullglob
-          # Name-based first
+          rm -f supabase/migrations/*.sql || true
           mapfile -t match < <(ls /tmp/all/*-01_*.sql 2>/dev/null || true)
-          # Content-based fallback
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
               if grep -qiE '(^|[^A-Z])CREATE[[:space:]]+TABLE|PRIMARY[[:space:]]+KEY|CREATE[[:space:]]+TYPE|CREATE[[:space:]]+SCHEMA' "$f"; then
@@ -138,9 +142,9 @@ jobs:
             echo "ℹ️ Phase 01: no matching files. Skipping."
           else
             printf "Phase 01 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
-            cp "${match[@]}" /tmp/phase-01/supabase/migrations/
+            cp "${match[@]}" supabase/migrations/
             echo "::group::supabase db push (01)"
-            if ! supabase db push --workdir /tmp/phase-01 > push-01.log 2>&1; then
+            if ! supabase db push > push-01.log 2>&1; then
               tail -n 200 push-01.log || true
               echo "::endgroup::"
               exit 1
@@ -153,9 +157,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/phase-02/supabase/migrations
-          cp supabase/config.toml /tmp/phase-02/supabase/config.toml
           shopt -s nullglob
+          rm -f supabase/migrations/*.sql || true
           mapfile -t match < <(ls /tmp/all/*-02_*.sql 2>/dev/null || true)
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
@@ -169,9 +172,9 @@ jobs:
             echo "ℹ️ Phase 02: no matching files. Skipping."
           else
             printf "Phase 02 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
-            cp "${match[@]}" /tmp/phase-02/supabase/migrations/
+            cp "${match[@]}" supabase/migrations/
             echo "::group::supabase db push (02)"
-            if ! supabase db push --workdir /tmp/phase-02 > push-02.log 2>&1; then
+            if ! supabase db push > push-02.log 2>&1; then
               tail -n 200 push-02.log || true
               echo "::endgroup::"
               exit 1
@@ -184,9 +187,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/phase-03/supabase/migrations
-          cp supabase/config.toml /tmp/phase-03/supabase/config.toml
           shopt -s nullglob
+          rm -f supabase/migrations/*.sql || true
           mapfile -t match < <(ls /tmp/all/*-03_*.sql 2>/dev/null || true)
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
@@ -200,9 +202,9 @@ jobs:
             echo "ℹ️ Phase 03: no matching files. Skipping."
           else
             printf "Phase 03 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
-            cp "${match[@]}" /tmp/phase-03/supabase/migrations/
+            cp "${match[@]}" supabase/migrations/
             echo "::group::supabase db push (03)"
-            if ! supabase db push --workdir /tmp/phase-03 > push-03.log 2>&1; then
+            if ! supabase db push > push-03.log 2>&1; then
               tail -n 200 push-03.log || true
               echo "::endgroup::"
               exit 1
@@ -215,9 +217,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/phase-04/supabase/migrations
-          cp supabase/config.toml /tmp/phase-04/supabase/config.toml
           shopt -s nullglob
+          rm -f supabase/migrations/*.sql || true
           mapfile -t match < <(ls /tmp/all/*-04_*.sql 2>/dev/null || true)
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
@@ -231,9 +232,9 @@ jobs:
             echo "ℹ️ Phase 04: no matching files. Skipping."
           else
             printf "Phase 04 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
-            cp "${match[@]}" /tmp/phase-04/supabase/migrations/
+            cp "${match[@]}" supabase/migrations/
             echo "::group::supabase db push (04)"
-            if ! supabase db push --workdir /tmp/phase-04 > push-04.log 2>&1; then
+            if ! supabase db push > push-04.log 2>&1; then
               tail -n 200 push-04.log || true
               echo "::endgroup::"
               exit 1
@@ -246,9 +247,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/phase-05/supabase/migrations
-          cp supabase/config.toml /tmp/phase-05/supabase/config.toml
           shopt -s nullglob
+          rm -f supabase/migrations/*.sql || true
           mapfile -t match < <(ls /tmp/all/*-05_*.sql 2>/dev/null || true)
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
@@ -262,9 +262,9 @@ jobs:
             echo "ℹ️ Phase 05: no matching files. Skipping."
           else
             printf "Phase 05 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
-            cp "${match[@]}" /tmp/phase-05/supabase/migrations/
+            cp "${match[@]}" supabase/migrations/
             echo "::group::supabase db push (05)"
-            if ! supabase db push --workdir /tmp/phase-05 > push-05.log 2>&1; then
+            if ! supabase db push > push-05.log 2>&1; then
               tail -n 200 push-05.log || true
               echo "::endgroup::"
               exit 1
