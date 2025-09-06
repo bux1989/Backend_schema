@@ -1,4 +1,4 @@
-name: Supabase Migration CI (phased)
+name: Supabase Migration CI
 
 concurrency:
   group: supabase-migrations-${{ github.ref }}
@@ -50,7 +50,7 @@ jobs:
       DEBUG: ""
       SUPABASE_DB_DEBUG: "0"
       SUPABASE_LOG_LEVEL: "warn"
-      # Fail fast on locks; don’t hang forever
+      # Fail fast on locks; don’t hang forever (may not affect CLI internals but harmless)
       PGOPTIONS: -c lock_timeout=5s -c statement_timeout=20min -c idle_in_transaction_session_timeout=1min
     steps:
       - uses: actions/checkout@v4
@@ -77,14 +77,14 @@ jobs:
           cat > /tmp/ping.sql <<'SQL'
           SELECT current_user, current_database();
           SQL
-          supabase db execute --project-ref "$SUPABASE_PROJECT_ID" --file /tmp/ping.sql
+          supabase db execute --file /tmp/ping.sql
 
       - name: Apply migrations (quiet + artifact)
         shell: bash
         run: |
           set -euo pipefail
           echo "::group::supabase db push"
-          if ! supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push.log 2>&1; then
+          if ! supabase db push > push.log 2>&1; then
             echo "❌ Migration failed. Last 200 lines:"
             tail -n 200 push.log || true
             echo "::endgroup::"
@@ -94,7 +94,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Verify migration status
-        run: supabase migration list --project-ref "$SUPABASE_PROJECT_ID"
+        run: supabase migration list
 
       # If a lock timeout or other failure happened, print blockers
       - name: Diagnose blocking (if previous step failed)
@@ -131,7 +131,7 @@ jobs:
           )
           SELECT * FROM blocked;
           SQL
-          supabase db execute --project-ref "$SUPABASE_PROJECT_ID" --file /tmp/locks.sql || true
+          supabase db execute --file /tmp/locks.sql || true
           echo "::endgroup::"
 
       - name: Upload full logs
