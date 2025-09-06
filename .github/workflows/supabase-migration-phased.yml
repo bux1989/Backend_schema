@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "Which phase to run"
+        description: "Which phase to run (ignored if only one migration file is present)"
         required: true
         default: all
         type: choice
@@ -60,41 +60,72 @@ jobs:
       - name: Link to Supabase project (non-interactive)
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Stage all .sql files recursively
+      - name: Detect migration files
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          mapfile -t SQLS < <(find supabase/migrations -type f -name '*.sql' | sort)
+          echo "Found ${#SQLS[@]} SQL file(s):"
+          printf ' - %s\n' "${SQLS[@]}" || true
+
+          if [ ${#SQLS[@]} -eq 0 ]; then
+            echo "❌ No .sql files found under supabase/migrations"; exit 1;
+          elif [ ${#SQLS[@]} -eq 1 ]; then
+            echo "SINGLE_MODE=true" >> "$GITHUB_ENV"
+            echo "SINGLE_FILE=${SQLS[0]}" >> "$GITHUB_ENV"
+          else
+            echo "SINGLE_MODE=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Apply single migration (no phase filtering)
+        if: env.SINGLE_MODE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Applying single migration file: $SINGLE_FILE"
+          mkdir -p /tmp/single-work/supabase/migrations
+          cp supabase/config.toml /tmp/single-work/supabase/config.toml
+          cp "$SINGLE_FILE" /tmp/single-work/supabase/migrations/
+          echo "::group::supabase db push (single-file)"
+          if ! supabase db push --workdir /tmp/single-work > push-all.log 2>&1; then
+            tail -n 200 push-all.log || true
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Set PHASE env (for multi-file case)
+        if: env.SINGLE_MODE != 'true'
+        run: echo "PHASE=${{ github.event_name == 'workflow_dispatch' && inputs.phase || 'all' }}" >> $GITHUB_ENV
+
+      - name: Stage all SQLs (multi-file case)
+        if: env.SINGLE_MODE != 'true'
         shell: bash
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
           mkdir -p /tmp/all
-          mapfile -t SQLS < <(printf "%s\n" supabase/migrations/**/*.sql)
-          if [ ${#SQLS[@]} -eq 0 ]; then
-            echo "❌ No .sql files found under supabase/migrations (including subfolders)."
-            echo "Expected e.g. supabase/migrations/2025xxxx-01_tables.sql or supabase/migrations/2025xxxx_name/migration.sql"
-            exit 1
-          fi
-          for f in "${SQLS[@]}"; do
-            # Preserve unique names in /tmp/all; include path hash to avoid collisions
+          for f in $(find supabase/migrations -type f -name '*.sql' | sort); do
             base="$(basename "$f")"
             hash="$(echo -n "$f" | sha1sum | cut -c1-8)"
             cp "$f" "/tmp/all/${hash}__${base}"
           done
-          echo "Staged ${#SQLS[@]} SQL files:"
+          echo "Staged files:"
           ls -1 /tmp/all || true
 
-      - name: Set PHASE env
-        run: echo "PHASE=${{ github.event_name == 'workflow_dispatch' && inputs.phase || 'all' }}" >> $GITHUB_ENV
-
-      - name: Apply phase 01 (tables)
-        if: ${{ env.PHASE == 'all' || env.PHASE == 'tables' }}
+      - name: Apply 01 tables
+        if: env.SINGLE_MODE != 'true' && (env.PHASE == 'all' || env.PHASE == 'tables')
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/phase-01/supabase/migrations
           cp supabase/config.toml /tmp/phase-01/supabase/config.toml
           shopt -s nullglob
-          # First try glob naming
+          # Name-based first
           mapfile -t match < <(ls /tmp/all/*-01_*.sql 2>/dev/null || true)
-          # Fallback: content-based detection (CREATE TABLE / PRIMARY KEY / CREATE TYPE / CREATE SCHEMA)
+          # Content-based fallback
           if [ ${#match[@]} -eq 0 ]; then
             while IFS= read -r -d '' f; do
               if grep -qiE '(^|[^A-Z])CREATE[[:space:]]+TABLE|PRIMARY[[:space:]]+KEY|CREATE[[:space:]]+TYPE|CREATE[[:space:]]+SCHEMA' "$f"; then
@@ -106,8 +137,7 @@ jobs:
           if [ ${#match[@]} -eq 0 ]; then
             echo "ℹ️ Phase 01: no matching files. Skipping."
           else
-            printf "Phase 01 files (%d):\n" "${#match[@]}"
-            printf " - %s\n" "${match[@]}"
+            printf "Phase 01 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
             cp "${match[@]}" /tmp/phase-01/supabase/migrations/
             echo "::group::supabase db push (01)"
             if ! supabase db push --workdir /tmp/phase-01 > push-01.log 2>&1; then
@@ -118,8 +148,8 @@ jobs:
             echo "::endgroup::"
           fi
 
-      - name: Apply phase 02 (foreign keys)
-        if: ${{ env.PHASE == 'all' || env.PHASE == 'foreign_keys' }}
+      - name: Apply 02 foreign keys
+        if: env.SINGLE_MODE != 'true' && (env.PHASE == 'all' || env.PHASE == 'foreign_keys')
         shell: bash
         run: |
           set -euo pipefail
@@ -138,8 +168,7 @@ jobs:
           if [ ${#match[@]} -eq 0 ]; then
             echo "ℹ️ Phase 02: no matching files. Skipping."
           else
-            printf "Phase 02 files (%d):\n" "${#match[@]}"
-            printf " - %s\n" "${match[@]}"
+            printf "Phase 02 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
             cp "${match[@]}" /tmp/phase-02/supabase/migrations/
             echo "::group::supabase db push (02)"
             if ! supabase db push --workdir /tmp/phase-02 > push-02.log 2>&1; then
@@ -150,8 +179,8 @@ jobs:
             echo "::endgroup::"
           fi
 
-      - name: Apply phase 03 (indexes)
-        if: ${{ env.PHASE == 'all' || env.PHASE == 'indexes' }}
+      - name: Apply 03 indexes
+        if: env.SINGLE_MODE != 'true' && (env.PHASE == 'all' || env.PHASE == 'indexes')
         shell: bash
         run: |
           set -euo pipefail
@@ -170,8 +199,7 @@ jobs:
           if [ ${#match[@]} -eq 0 ]; then
             echo "ℹ️ Phase 03: no matching files. Skipping."
           else
-            printf "Phase 03 files (%d):\n" "${#match[@]}"
-            printf " - %s\n" "${match[@]}"
+            printf "Phase 03 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
             cp "${match[@]}" /tmp/phase-03/supabase/migrations/
             echo "::group::supabase db push (03)"
             if ! supabase db push --workdir /tmp/phase-03 > push-03.log 2>&1; then
@@ -182,8 +210,8 @@ jobs:
             echo "::endgroup::"
           fi
 
-      - name: Apply phase 04 (views & functions)
-        if: ${{ env.PHASE == 'all' || env.PHASE == 'views_functions' }}
+      - name: Apply 04 views & functions
+        if: env.SINGLE_MODE != 'true' && (env.PHASE == 'all' || env.PHASE == 'views_functions')
         shell: bash
         run: |
           set -euo pipefail
@@ -202,8 +230,7 @@ jobs:
           if [ ${#match[@]} -eq 0 ]; then
             echo "ℹ️ Phase 04: no matching files. Skipping."
           else
-            printf "Phase 04 files (%d):\n" "${#match[@]}"
-            printf " - %s\n" "${match[@]}"
+            printf "Phase 04 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
             cp "${match[@]}" /tmp/phase-04/supabase/migrations/
             echo "::group::supabase db push (04)"
             if ! supabase db push --workdir /tmp/phase-04 > push-04.log 2>&1; then
@@ -214,8 +241,8 @@ jobs:
             echo "::endgroup::"
           fi
 
-      - name: Apply phase 05 (triggers & policies)
-        if: ${{ env.PHASE == 'all' || env.PHASE == 'triggers_policies' }}
+      - name: Apply 05 triggers & policies
+        if: env.SINGLE_MODE != 'true' && (env.PHASE == 'all' || env.PHASE == 'triggers_policies')
         shell: bash
         run: |
           set -euo pipefail
@@ -234,8 +261,7 @@ jobs:
           if [ ${#match[@]} -eq 0 ]; then
             echo "ℹ️ Phase 05: no matching files. Skipping."
           else
-            printf "Phase 05 files (%d):\n" "${#match[@]}"
-            printf " - %s\n" "${match[@]}"
+            printf "Phase 05 files (%d):\n" "${#match[@]}"; printf " - %s\n" "${match[@]}"
             cp "${match[@]}" /tmp/phase-05/supabase/migrations/
             echo "::group::supabase db push (05)"
             if ! supabase db push --workdir /tmp/phase-05 > push-05.log 2>&1; then
@@ -247,7 +273,7 @@ jobs:
           fi
 
       - name: Verify migration status
-        if: ${{ success() && (env.PHASE == 'all') }}
+        if: success() && env.SINGLE_MODE != 'true' && env.PHASE == 'all'
         run: supabase migration list
 
       - name: Upload logs
@@ -256,6 +282,7 @@ jobs:
         with:
           name: supabase-phased-logs
           path: |
+            push-all.log
             push-01.log
             push-02.log
             push-03.log
