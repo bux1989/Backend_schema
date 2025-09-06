@@ -4263,7 +4263,7 @@ BEGIN
         p_description,
         p_website_url,
         'active',
-        auth.get_profile_id()
+        public.get_profile_id()
     );
 
     RETURN QUERY SELECT true, v_new_partner_id, 'Cooperation partner created successfully'::text;
@@ -5029,7 +5029,7 @@ BEGIN
         p_notes,
         NOW(),
         NOW(),
-        auth.get_profile_id()
+        public.get_profile_id()
     );
 
     -- Add email contact if provided
@@ -11581,17 +11581,6 @@ $$;
 
 
 --
--- Name: get_user_family_ids(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.get_user_family_ids() RETURNS uuid[]
-    LANGUAGE sql STABLE SECURITY DEFINER
-    AS $$
-    SELECT auth.get_user_family_ids();
-$$;
-
-
---
 -- Name: get_user_family_ids_optimized(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17925,7 +17914,7 @@ BEGIN
         p_start_date,
         p_end_date,
         p_notes,
-        auth.get_profile_id()
+        public.get_profile_id()
     )
     ON CONFLICT (profile_id) DO UPDATE SET
         cooperation_partner_id = EXCLUDED.cooperation_partner_id,
@@ -17934,7 +17923,7 @@ BEGIN
         start_date = EXCLUDED.start_date,
         end_date = EXCLUDED.end_date,
         notes = EXCLUDED.notes,
-        updated_by = auth.get_profile_id(),
+        updated_by = public.get_profile_id(),
         updated_at = NOW();
 
     RETURN QUERY SELECT true, p_profile_id, 'External staff profile saved successfully'::text;
@@ -20532,7 +20521,7 @@ BEGIN
         end_date = p_end_date,
         notes = p_notes,
         updated_at = NOW(),
-        updated_by = auth.get_profile_id()
+        updated_by = public.get_profile_id()
     WHERE profile_info_external.profile_id = p_profile_id;
 
     -- Handle email contact
@@ -32402,14 +32391,14 @@ ALTER TABLE ONLY public.user_trusted_devices
 -- Name: profile_info_external Admins and teachers can manage external staff; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins and teachers can manage external staff" ON public.profile_info_external USING (((school_id = public.get_user_school_id()) AND (auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text, 'Teacher'::text]))));
+CREATE POLICY "Admins and teachers can manage external staff" ON public.profile_info_external USING (((school_id = public.get_user_school_id()) AND (public.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text, 'Teacher'::text]))));
 
 
 --
 -- Name: documents Admins can manage school documents; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can manage school documents" ON public.documents USING (((school_id = public.get_user_school_id()) AND auth.user_has_role('Admin'::text)));
+CREATE POLICY "Admins can manage school documents" ON public.documents USING (((school_id = public.get_user_school_id()) AND public.user_has_role('Admin'::text)));
 
 
 --
@@ -32576,7 +32565,7 @@ CREATE POLICY admin_access_mfa_security_events ON public.mfa_security_events TO 
 -- Name: class_absences admin_full_access_class_absences; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY admin_full_access_class_absences ON public.class_absences TO authenticated USING (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id()))) WITH CHECK (((auth.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id())));
+CREATE POLICY admin_full_access_class_absences ON public.class_absences TO authenticated USING (((public.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id()))) WITH CHECK (((public.get_user_role() = ANY (ARRAY['Admin'::text, 'Super Admin'::text])) OR (school_id = public.get_user_school_id())));
 
 
 --
