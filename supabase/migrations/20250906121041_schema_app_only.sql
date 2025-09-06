@@ -5,8 +5,10 @@
 -- Dumped from database version 15.8
 -- Dumped by pg_dump version 16.9 (Ubuntu 16.9-0ubuntu0.24.04.1)
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
+-- Set reasonable timeouts to prevent indefinite hangs during CI/remote pushes
+-- See: https://github.com/bux1989/Backend_schema/issues/13
+SET statement_timeout = '10min';
+SET lock_timeout = '2min';
 SET idle_in_transaction_session_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
@@ -33524,46 +33526,10 @@ ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.substitutions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: user_codes; Type: ROW SECURITY; Schema: public; Owner: -
+-- Note: RLS for user_* tables moved to separate migration 20250906121042_enable_rls_user_tables.sql
+-- to prevent CI deadlocks due to ACCESS EXCLUSIVE lock contention.
+-- See: https://github.com/bux1989/Backend_schema/issues/13
 --
-
-ALTER TABLE public.user_codes ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_group_members; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_group_members ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_groups; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_groups ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_mfa_preferences; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_mfa_preferences ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_profiles; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_roles; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
-
---
--- Name: user_trusted_devices; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.user_trusted_devices ENABLE ROW LEVEL SECURITY;
 
 --
 -- PostgreSQL database dump complete
