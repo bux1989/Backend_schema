@@ -1,16 +1,22 @@
 --
 -- Migration: Add Auth Helper Functions for Policies (EARLY)
--- This migration adds the auth schema helper functions that are referenced
+-- This migration adds helper functions in the public schema that are referenced
 -- by the main schema migration. Must run BEFORE 20250906121041_schema_app_only.sql
 --
+-- Note: Functions are created in public schema because Supabase restricts
+-- user DDL operations in the auth schema.
+--
 
--- Create auth schema if it doesn't exist (Supabase usually provides this, but ensuring portability)
-CREATE SCHEMA IF NOT EXISTS auth;
+-- Drop any existing auth schema functions that might have been created previously
+DROP FUNCTION IF EXISTS auth.get_user_role() CASCADE;
+DROP FUNCTION IF EXISTS auth.user_has_role(text) CASCADE;
+DROP FUNCTION IF EXISTS auth.get_profile_id() CASCADE;
+DROP FUNCTION IF EXISTS auth.get_user_family_ids() CASCADE;
 
 --
--- Name: auth.get_user_role(); Type: FUNCTION; Schema: auth; Owner: -
+-- Name: public.get_user_role(); Type: FUNCTION; Schema: public; Owner: -
 --
-CREATE OR REPLACE FUNCTION auth.get_user_role() RETURNS text
+CREATE OR REPLACE FUNCTION public.get_user_role() RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path = public, auth
     AS $$
@@ -39,9 +45,9 @@ END;
 $$;
 
 --
--- Name: auth.user_has_role(text); Type: FUNCTION; Schema: auth; Owner: -
+-- Name: public.user_has_role(text); Type: FUNCTION; Schema: public; Owner: -
 --
-CREATE OR REPLACE FUNCTION auth.user_has_role(required_role text) RETURNS boolean
+CREATE OR REPLACE FUNCTION public.user_has_role(required_role text) RETURNS boolean
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path = public, auth
     AS $$
@@ -83,9 +89,9 @@ END;
 $$;
 
 --
--- Name: auth.get_profile_id(); Type: FUNCTION; Schema: auth; Owner: -
+-- Name: public.get_profile_id(); Type: FUNCTION; Schema: public; Owner: -
 --
-CREATE OR REPLACE FUNCTION auth.get_profile_id() RETURNS uuid
+CREATE OR REPLACE FUNCTION public.get_profile_id() RETURNS uuid
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path = public, auth
     AS $$
@@ -101,9 +107,9 @@ END;
 $$;
 
 --
--- Name: auth.get_user_family_ids(); Type: FUNCTION; Schema: auth; Owner: -
+-- Name: public.get_user_family_ids(); Type: FUNCTION; Schema: public; Owner: -
 --
-CREATE OR REPLACE FUNCTION auth.get_user_family_ids() RETURNS uuid[]
+CREATE OR REPLACE FUNCTION public.get_user_family_ids() RETURNS uuid[]
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path = public, auth
     AS $$
@@ -136,7 +142,7 @@ $$;
 -- These functions are called within RLS policies, so they need to be executable
 -- by the roles that trigger policy evaluation
 --
-GRANT EXECUTE ON FUNCTION auth.get_user_role() TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION auth.user_has_role(text) TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION auth.get_profile_id() TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION auth.get_user_family_ids() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_user_role() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.user_has_role(text) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_profile_id() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_user_family_ids() TO authenticated, anon;
