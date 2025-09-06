@@ -1,9 +1,9 @@
 name: Supabase Migration CI
 
-# Concurrency group to ensure only one migration run executes at a time
+# Concurrency: separate groups per event + ref so PR validation won't cancel push/dispatch runs
 concurrency:
-  group: supabase-migration
-  cancel-in-progress: true
+  group: supabase-migration-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'pull_request' }}
 
 on:
   push:
@@ -65,7 +65,7 @@ jobs:
   # Migration job that only runs on push to main or manual dispatch
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # Ensure overall job timeout is >= 10 minutes
+    timeout-minutes: 90
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -99,14 +99,14 @@ jobs:
           echo "✅ All required environment variables are set"
 
       - name: Link to Supabase project
-        timeout-minutes: 3
+        timeout-minutes: 10
         run: |
           echo "🔗 Linking to Supabase project: $SUPABASE_PROJECT_ID"
           supabase link --project-ref "$SUPABASE_PROJECT_ID" \
             --password "$SUPABASE_DB_PASSWORD" --debug
 
       - name: Check migration status
-        timeout-minutes: 2
+        timeout-minutes: 10
         run: |
           echo "📋 Checking current migration status..."
           supabase migration list --debug
@@ -135,7 +135,7 @@ jobs:
           supabase migration list --debug
 
       - name: Repair migration conflicts (remote-only)
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           echo "🔧 Checking for migration conflicts..."
           
@@ -163,13 +163,16 @@ jobs:
           supabase migration list --debug
 
       - name: Run migrations
-        timeout-minutes: 5
+        timeout-minutes: 30
         run: |
           echo "🚀 Running migrations..."
+          # For very large DDL, consider a direct DB URL (uncomment next two lines):
+          # export SUPABASE_DB_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_ID}.supabase.co:5432/postgres"
+          # supabase db push --debug --db-url "$SUPABASE_DB_URL"
           supabase db push --debug
 
       - name: Verify migration completion
-        timeout-minutes: 2
+        timeout-minutes: 10
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
@@ -178,4 +181,13 @@ jobs:
           echo "🧾 supabase_migrations.schema_migrations content (post-push):"
           psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -c \
             "select version, name, coalesce(array_length(statements,1),0) as stmt_count from supabase_migrations.schema_migrations order by version;"
+
+      - name: List user tables (non-system schemas)
+        timeout-minutes: 5
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "📚 Listing tables in non-system schemas:"
+          psql "postgresql://postgres.${SUPABASE_PROJECT_ID}:${SUPABASE_DB_PASSWORD}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" -Atc \
+            "select table_schema, table_name from information_schema.tables where table_schema not in ('pg_catalog','information_schema') order by 1,2 limit 200;"
           echo "Migration workflow completed successfully!"
