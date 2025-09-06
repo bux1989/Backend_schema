@@ -102,7 +102,19 @@ jobs:
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Run migrations (simplified approach)
+      - name: Sync remote schema (pull missing migrations)
+        run: |
+          echo "🔄 Syncing remote schema to local..."
+          # Pull any migrations that exist remotely but not locally
+          if ! supabase db pull --debug; then
+            echo "⚠️  Failed to pull remote schema, continuing anyway..."
+          fi
+          
+          # Show updated migration status
+          echo "📋 Migration status after sync:"
+          supabase migration list --debug
+
+      - name: Run migrations
         run: |
           echo "🚀 Running migrations..."
           # Use db push which handles migrations properly
