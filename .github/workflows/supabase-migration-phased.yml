@@ -1,4 +1,8 @@
-name: Supabase Migration (Phased)
+name: Supabase Migration CI
+
+concurrency:
+  group: supabase-migrations-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
@@ -6,222 +10,133 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/config.toml'
-      - '.github/workflows/supabase-migration-phased.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/config.toml'
   workflow_dispatch:
-    inputs:
-      phase:
-        description: "Which phase to run"
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - tables
-          - foreign_keys
-          - indexes
-          - views_functions
-          - triggers_policies
-
-concurrency:
-  group: supabase-migrations-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  # Quiet noisy protocol logs
-  DEBUG: ""
-  SUPABASE_DB_DEBUG: "0"
-  SUPABASE_LOG_LEVEL: "warn"
-  # Fail fast on long locks
-  PGOPTIONS: -c lock_timeout=5s -c statement_timeout=20min -c idle_in_transaction_session_timeout=1min
 
 jobs:
-  phase_tables:
-    name: 01 Tables
-    if: github.event_name == 'push' || inputs.phase == 'all' || inputs.phase == 'tables'
+  # Optional: basic PR validation without touching the DB
+  validate-migrations:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Verify secrets
-        run: |
-          [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "❌ SUPABASE_ACCESS_TOKEN missing"; exit 1; }
-          [ -n "${SUPABASE_PROJECT_ID:-}" ]   || { echo "❌ SUPABASE_PROJECT_ID missing"; exit 1; }
-      - name: Filter migrations to 01_* (tables)
-        shell: bash
+      - name: Validate migration files (basic)
         run: |
           set -euo pipefail
-          mkdir -p /tmp/all /tmp/phase
-          shopt -s nullglob
-          mv supabase/migrations/*.sql /tmp/all/ || true
-          cp /tmp/all/*-01_*.sql supabase/migrations/ || true
-          echo "Files to apply:"
-          ls -1 supabase/migrations || true
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Apply 01 migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push-01.log 2>&1 || {
-            echo "❌ 01 failed. Last 200 lines:"; tail -n 200 push-01.log || true; exit 1; }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-01-tables
-          path: push-01.log
+          files=$(find supabase/migrations -name "*.sql" -type f || true)
+          if [ -z "$files" ]; then
+            echo "❌ No migration files found"
+            exit 1
+          fi
+          echo "$files" | sed 's/^/ - /'
+          echo "✅ Migration validation completed"
 
-  phase_fks:
-    name: 02 Foreign Keys
-    needs: [phase_tables]
-    if: (github.event_name == 'push' && needs.phase_tables.result == 'success') || inputs.phase == 'all' || inputs.phase == 'foreign_keys'
+  migrate:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      # Quiet the CLI
+      DEBUG: ""
+      SUPABASE_DB_DEBUG: "0"
+      SUPABASE_LOG_LEVEL: "warn"
+      # Fail fast on locks; don’t hang forever
+      PGOPTIONS: -c lock_timeout=5s -c statement_timeout=20min -c idle_in_transaction_session_timeout=1min
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Filter migrations to 02_* (FKs)
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/all
-          shopt -s nullglob
-          mv supabase/migrations/*.sql /tmp/all/ || true
-          cp /tmp/all/*-02_*.sql supabase/migrations/ || true
-          echo "Files to apply:"; ls -1 supabase/migrations || true
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Apply 02 migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push-02.log 2>&1 || {
-            echo "❌ 02 failed. Last 200 lines:"; tail -n 200 push-02.log || true; exit 1; }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-02-fks
-          path: push-02.log
 
-  phase_indexes:
-    name: 03 Indexes
-    needs: [phase_fks]
-    if: (github.event_name == 'push' && needs.phase_fks.result == 'success') || inputs.phase == 'all' || inputs.phase == 'indexes'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Filter migrations to 03_* (indexes)
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/all
-          shopt -s nullglob
-          mv supabase/migrations/*.sql /tmp/all/ || true
-          cp /tmp/all/*-03_*.sql supabase/migrations/ || true
-          echo "Files to apply:"; ls -1 supabase/migrations || true
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Apply 03 migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          # If you use CREATE INDEX CONCURRENTLY and the CLI errors about transactions,
-          # keep those statements in a dedicated 03 file and consider supabase db execute instead.
-          supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push-03.log 2>&1 || {
-            echo "❌ 03 failed. Last 200 lines:"; tail -n 200 push-03.log || true; exit 1; }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-03-indexes
-          path: push-03.log
 
-  phase_views_functions:
-    name: 04 Views & Functions
-    needs: [phase_indexes]
-    if: (github.event_name == 'push' && needs.phase_indexes.result == 'success') || inputs.phase == 'all' || inputs.phase == 'views_functions'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Filter migrations to 04_* (views/functions)
-        shell: bash
+      - name: Verify required secrets
         run: |
           set -euo pipefail
-          mkdir -p /tmp/all
-          shopt -s nullglob
-          mv supabase/migrations/*.sql /tmp/all/ || true
-          cp /tmp/all/*-04_*.sql supabase/migrations/ || true
-          echo "Files to apply:"; ls -1 supabase/migrations || true
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Apply 04 migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push-04.log 2>&1 || {
-            echo "❌ 04 failed. Last 200 lines:"; tail -n 200 push-04.log || true; exit 1; }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-04-views-functions
-          path: push-04.log
+          [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "❌ SUPABASE_ACCESS_TOKEN is not set"; exit 1; }
+          [ -n "${SUPABASE_PROJECT_ID:-}" ]   || { echo "❌ SUPABASE_PROJECT_ID is not set"; exit 1; }
+          [ -n "${SUPABASE_DB_PASSWORD:-}" ]  || { echo "❌ SUPABASE_DB_PASSWORD is not set (Dashboard → Project Settings → Database password)"; exit 1; }
+          echo "✅ Secrets present"
 
-  phase_triggers_policies:
-    name: 05 Triggers & Policies
-    needs: [phase_views_functions]
-    if: (github.event_name == 'push' && needs.phase_views_functions.result == 'success') || inputs.phase == 'all' || inputs.phase == 'triggers_policies'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Filter migrations to 05_* (triggers/policies)
+      - name: Link to Supabase project (non-interactive)
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Quick DB ping (sanity check)
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/all
-          shopt -s nullglob
-          mv supabase/migrations/*.sql /tmp/all/ || true
-          cp /tmp/all/*-05_*.sql supabase/migrations/ || true
-          echo "Files to apply:"; ls -1 supabase/migrations || true
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
-      - name: Apply 05 migrations
+          cat > /tmp/ping.sql <<'SQL'
+          SELECT current_user, current_database();
+          SQL
+          supabase db execute --project-ref "$SUPABASE_PROJECT_ID" --file /tmp/ping.sql
+
+      - name: Apply migrations (quiet + artifact)
         shell: bash
         run: |
           set -euo pipefail
-          supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push-05.log 2>&1 || {
-            echo "❌ 05 failed. Last 200 lines:"; tail -n 200 push-05.log || true; exit 1; }
-      - uses: actions/upload-artifact@v4
+          echo "::group::supabase db push"
+          if ! supabase db push --project-ref "$SUPABASE_PROJECT_ID" > push.log 2>&1; then
+            echo "❌ Migration failed. Last 200 lines:"
+            tail -n 200 push.log || true
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "✅ Migrations applied successfully."
+          echo "::endgroup::"
+
+      - name: Verify migration status
+        run: supabase migration list --project-ref "$SUPABASE_PROJECT_ID"
+
+      # If a lock timeout or other failure happened, print blockers
+      - name: Diagnose blocking (if previous step failed)
+        if: failure()
+        shell: bash
+        run: |
+          echo "::group::Blocking diagnostics"
+          cat > /tmp/locks.sql <<'SQL'
+          SELECT now() AS now, pid, wait_event_type, wait_event, state,
+                 age(clock_timestamp(), query_start) AS running_for,
+                 usename, application_name,
+                 regexp_replace(query, '\s+', ' ', 'g') AS query
+          FROM pg_stat_activity
+          WHERE state <> 'idle'
+          ORDER BY query_start;
+
+          WITH blocked AS (
+            SELECT blocked_locks.pid AS blocked_pid, blocked_activity.query AS blocked_query,
+                   blocking_locks.pid AS blocking_pid, blocking_activity.query AS blocking_query,
+                   blocked_activity.query_start AS blocked_since
+            FROM pg_locks blocked_locks
+            JOIN pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
+            JOIN pg_locks blocking_locks ON blocking_locks.locktype = blocked_locks.locktype
+                 AND blocking_locks.DATABASE IS NOT DISTINCT FROM blocked_locks.DATABASE
+                 AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
+                 AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
+                 AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
+                 AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
+                 AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
+                 AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
+                 AND blocking_locks.pid <> blocked_locks.pid
+            JOIN pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
+            WHERE NOT blocked_locks.GRANTED
+          )
+          SELECT * FROM blocked;
+          SQL
+          supabase db execute --project-ref "$SUPABASE_PROJECT_ID" --file /tmp/locks.sql || true
+          echo "::endgroup::"
+
+      - name: Upload full logs
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: logs-05-triggers-policies
-          path: push-05.log
+          name: supabase-push-logs
+          path: push.log
