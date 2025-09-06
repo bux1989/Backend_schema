@@ -1,0 +1,20 @@
+# Build artifacts
+node_modules/
+dist/
+build/
+*.log
+
+# Temporary test files
+test-*.sh
+*.tmp
+*.temp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
