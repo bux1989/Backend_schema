@@ -1,4 +1,4 @@
-name: Supabase Migration CI
+name: Supabase Migration CI (phased)
 
 concurrency:
   group: supabase-migrations-${{ github.ref }}
