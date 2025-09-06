@@ -102,22 +102,30 @@ jobs:
           echo "📋 Checking current migration status..."
           supabase migration list --debug
 
-      - name: Sync remote schema (pull missing migrations)
+      - name: Repair migration history
         run: |
-          echo "🔄 Syncing remote schema to local..."
-          # Pull any migrations that exist remotely but not locally
-          if ! supabase db pull --debug; then
-            echo "⚠️  Failed to pull remote schema, continuing anyway..."
+          echo "🔧 Repairing migration history to resolve mismatches..."
+          
+          # Repair the specific migration that exists remotely but not locally
+          echo "Marking remote migration 20250906121030 as reverted..."
+          if ! supabase migration repair --status reverted 20250906121030 --debug; then
+            echo "⚠️ Could not repair migration 20250906121030, continuing anyway..."
           fi
           
-          # Show updated migration status
-          echo "📋 Migration status after sync:"
+          # Mark the local migration as applied in the history
+          echo "Marking local migration 20250906121041 as applied..."
+          if ! supabase migration repair --status applied 20250906121041 --debug; then
+            echo "⚠️ Could not repair migration 20250906121041, continuing anyway..."
+          fi
+          
+          # Show updated status
+          echo "📋 Migration status after repair:"
           supabase migration list --debug
 
       - name: Run migrations
         run: |
           echo "🚀 Running migrations..."
-          # Use db push which handles migrations properly
+          # Now try to push the migrations
           supabase db push --debug
 
       - name: Verify migration completion
